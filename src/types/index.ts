@@ -1,5 +1,5 @@
 /**
- * Voxline AI — AI Business Operating System Types
+ * Voxline AI — AI Business Operating System Types (extended for contact discovery, provenance & workspace)
  */
 
 export type UserRole = 'ceo' | 'sales_manager' | 'employee' | 'admin' | 'read_only';
@@ -11,6 +11,7 @@ export interface User {
   role: UserRole;
   is_active: boolean;
   avatar_url?: string;
+  workspace_id?: string; // multi-tenant support
 }
 
 export type CompanyStatus = 'discovered' | 'qualified' | 'contacted' | 'negotiating' | 'client' | 'unqualified' | 'archived';
@@ -22,9 +23,17 @@ export interface CompanyContact {
   company_id: string;
   full_name: string;
   role: string;
-  email: string;
-  phone: string;
+  title?: string;
+  email?: string;
+  phone?: string;
+  linkedin?: string;
   is_primary: boolean;
+  confidence?: number; // 0-100
+  contact_source?: string; // e.g., 'hunter', 'apollo', 'clearbit', 'crawler', 'manual'
+  is_verified?: boolean;
+  is_demo?: boolean;
+  created_at?: string;
+  workspace_id?: string;
 }
 
 export interface Company {
@@ -42,7 +51,11 @@ export interface Company {
   description: string;
   status: CompanyStatus;
   pipeline_stage: PipelineStage;
-  source: string;
+  source: string; // human-readable source description
+  source_type?: 'real_web' | 'api_source' | 'manual' | 'ai_demo'; // provenance
+  is_verified?: boolean; // whether the lead has been verified from a source
+  verification_source?: string | null; // URL or API source used to verify
+  is_demo?: boolean; // true for ai_demo records
   assigned_to_user_id?: string;
   discovered_at: string;
   updated_at: string;
@@ -52,6 +65,12 @@ export interface Company {
   contacts?: CompanyContact[];
   lead_score?: number;
   lead_score_tier?: 'hot' | 'warm' | 'cold';
+  discovery_confidence?: number; // 0-100
+  workspace_id?: string;
+  // ICP scoring
+  icp_score?: number; // 0-100
+  fit_reasons?: string[];
+  sales_priority?: 'high' | 'medium' | 'low';
 }
 
 export interface ResearchReport {
@@ -65,6 +84,12 @@ export interface ResearchReport {
   automation_need_score: number; // 0-100
   version: number;
   created_at: string;
+  workspace_id?: string;
+  // Pain points and sales angles
+  pain_points?: string[];
+  sales_angles?: string[];
+  why_voxline_fit?: string;
+  recommended_pitch?: string;
 }
 
 export interface Opportunity {
@@ -76,6 +101,7 @@ export interface Opportunity {
   priority: 'high' | 'medium' | 'low';
   estimated_monthly_value_usd: number;
   created_at: string;
+  workspace_id?: string;
 }
 
 export interface LeadScoreFactor {
@@ -91,6 +117,7 @@ export interface LeadScore {
   factors: LeadScoreFactor[];
   tier: 'hot' | 'warm' | 'cold';
   scored_at: string;
+  workspace_id?: string;
 }
 
 export type ChannelType = 'email' | 'whatsapp' | 'instagram' | 'voice' | 'linkedin';
@@ -104,8 +131,9 @@ export interface Message {
   status: 'draft' | 'pending_approval' | 'approved' | 'sent' | 'delivered' | 'failed' | 'rejected';
   ai_generated: boolean;
   approved_by?: string;
-  sent_at: string;
+  sent_at?: string;
   language?: 'am' | 'en' | 'ru';
+  workspace_id?: string;
 }
 
 export interface Conversation {
@@ -118,6 +146,7 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   messages?: Message[];
+  workspace_id?: string;
 }
 
 export interface Meeting {
@@ -129,6 +158,7 @@ export interface Meeting {
   notes?: string;
   meeting_link?: string;
   attendees?: string[];
+  workspace_id?: string;
 }
 
 export interface ProposalLineItem {
@@ -150,6 +180,7 @@ export interface Proposal {
   is_ai_generated: boolean;
   created_at: string;
   updated_at: string;
+  workspace_id?: string;
 }
 
 export interface PipelineEvent {
@@ -160,6 +191,7 @@ export interface PipelineEvent {
   changed_by?: string;
   reason?: string;
   created_at: string;
+  workspace_id?: string;
 }
 
 export type AgentType = 'scout' | 'research' | 'opportunity' | 'qualification' | 'sales' | 'followup' | 'ceo_assistant' | 'ai_ceo' | 'competitor' | 'market';
@@ -171,6 +203,13 @@ export interface Agent {
   status: 'idle' | 'running' | 'paused' | 'error';
   config: Record<string, any>;
   last_run_at?: string;
+  workspace_id?: string;
+}
+
+export interface AgentJobError {
+  code?: string;
+  message: string;
+  detail?: any;
 }
 
 export interface AgentJob {
@@ -180,11 +219,14 @@ export interface AgentJob {
   job_type: string;
   status: 'queued' | 'running' | 'success' | 'failed' | 'escalated';
   input: Record<string, any>;
-  output?: Record<string, any>;
+  output?: Record<string, any> | any;
   retry_count: number;
-  error?: string;
+  error?: AgentJobError | null;
   created_at: string;
+  started_at?: string;
   completed_at?: string;
+  initiated_by?: string;
+  workspace_id?: string;
 }
 
 export interface KBArticle {
@@ -195,6 +237,7 @@ export interface KBArticle {
   version: number;
   is_published: boolean;
   updated_at: string;
+  workspace_id?: string;
 }
 
 export interface Note {
@@ -204,6 +247,7 @@ export interface Note {
   author_name: string;
   body: string;
   created_at: string;
+  workspace_id?: string;
 }
 
 export interface AuditLog {
@@ -216,6 +260,7 @@ export interface AuditLog {
   actor_id?: string;
   actor_email?: string;
   created_at: string;
+  workspace_id?: string;
 }
 
 // Section 16 Advanced Intelligence Types
@@ -232,6 +277,7 @@ export interface StrategicRecommendation {
   reviewed_by?: string;
   reviewed_at?: string;
   created_at: string;
+  workspace_id?: string;
 }
 
 export interface Competitor {
@@ -242,6 +288,7 @@ export interface Competitor {
   market: string;
   threat_level: 'low' | 'medium' | 'high';
   first_tracked_at: string;
+  workspace_id?: string;
 }
 
 export interface CompetitorEvent {
@@ -251,6 +298,7 @@ export interface CompetitorEvent {
   description: string;
   source_url: string;
   detected_at: string;
+  workspace_id?: string;
 }
 
 export interface MarketSignal {
@@ -263,6 +311,7 @@ export interface MarketSignal {
   period_start: string;
   period_end: string;
   source: string;
+  workspace_id?: string;
 }
 
 export interface RevenueForecast {
@@ -275,6 +324,7 @@ export interface RevenueForecast {
   confidence_score: number;
   model_id: string;
   generated_at: string;
+  workspace_id?: string;
 }
 
 export interface AIMemoryEntry {
@@ -284,6 +334,7 @@ export interface AIMemoryEntry {
   content: string;
   confidence: number;
   created_at: string;
+  workspace_id?: string;
 }
 
 export interface LearningExperiment {
@@ -300,6 +351,7 @@ export interface LearningExperiment {
   status: 'running' | 'completed' | 'applied' | 'rejected';
   recommendation: string;
   created_at: string;
+  workspace_id?: string;
 }
 
 export interface PluginSystem {
@@ -311,6 +363,7 @@ export interface PluginSystem {
   status: 'active' | 'disabled' | 'revoked';
   permissions: string[];
   installed_at: string;
+  workspace_id?: string;
 }
 
 export interface CEOBrief {
@@ -323,4 +376,5 @@ export interface CEOBrief {
   potential_risks: string[];
   weekly_goals: { target: number; current: number; metric: string }[];
   strategic_recommendations: StrategicRecommendation[];
+  workspace_id?: string;
 }
