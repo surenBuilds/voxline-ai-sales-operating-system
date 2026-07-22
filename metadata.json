@@ -1,0 +1,6 @@
+{
+  "name": "Voxline AI — AI Business Operating System",
+  "description": "Comprehensive AI sales intelligence, company research, opportunity detection, lead scoring, CRM, sales assistance, proposal generation, revenue forecasting, AI CEO strategic intelligence, and Voxline Brain.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
