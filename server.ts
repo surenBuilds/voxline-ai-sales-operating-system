@@ -4,6 +4,8 @@ import { createServer as createViteServer } from 'vite';
 import { getDb, addAuditLog, saveDatabaseToDisk, generateSupabaseSQLScript } from './server/db.js';
 import { VoxlineBrain } from './server/brain.js';
 import { runAIProposalGenerator } from './server/ai.js';
+import { sendMessageById } from './server/messaging.js';
+import { startAutonomousScheduler } from './server/scheduler.js';
 
 async function startServer() {
   const app = express();
@@ -234,27 +236,9 @@ async function startServer() {
     res.json({ message: msg });
   });
 
-  app.post('/api/messages/:id/send', (req, res) => {
-    const db = getDb();
-    const msg = db.messages.find(m => m.id === req.params.id);
-    if (!msg) return res.status(404).json({ error: 'Message not found' });
-
-    msg.status = 'sent';
-    msg.sent_at = new Date().toISOString();
-
-    // Update company pipeline stage
-    const conv = db.conversations.find(c => c.id === msg.conversation_id);
-    if (conv) {
-      const comp = db.companies.find(c => c.id === conv.company_id);
-      if (comp) {
-        comp.pipeline_stage = 'contacted';
-        comp.status = 'contacted';
-        comp.updated_at = new Date().toISOString();
-      }
-    }
-
-    saveDatabaseToDisk();
-    res.json({ message: msg });
+  app.post('/api/messages/:id/send', async (req, res) => {
+    const result = await sendMessageById(req.params.id);
+    res.status(result.status).json(result.body);
   });
 
   // 5. PROPOSALS & AI PROPOSAL GENERATOR
@@ -457,6 +441,8 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Voxline AI OS running on http://0.0.0.0:${PORT}`);
   });
+
+  startAutonomousScheduler();
 }
 
 startServer();
