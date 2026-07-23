@@ -13,25 +13,21 @@ export interface SearchCandidate {
 }
 
 export async function searchCompanies(filters: any): Promise<SearchCandidate[]> {
-  // Priority: SerpAPI -> Google -> Bing -> fallback empty
-  if (process.env.SERPAPI_KEY) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const serpapi = require('./serpapi.js');
-    return serpapi.searchCompanies(filters);
+  // Google Places is the currently implemented real-data connector. It's only
+  // invoked if its API key is configured, so a missing key never crashes the
+  // agent — it just yields no verified leads (caller falls back to demo mode).
+  // Additional connectors (SerpAPI, Bing, etc.) can be added the same way:
+  // add a new file in this folder + a new `if (process.env.X_KEY)` branch here.
+  if (process.env.GOOGLE_PLACES_API_KEY) {
+    try {
+      const places = await import('./googlePlaces.js');
+      const results = (await places.searchCompanies(filters)) as SearchCandidate[];
+      if (results.length > 0) return results;
+    } catch (err) {
+      console.error('Google Places connector error:', err);
+    }
   }
 
-  if (process.env.GOOGLE_SEARCH_KEY) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const google = require('./googleSearch.js');
-    return google.searchCompanies(filters);
-  }
-
-  if (process.env.BING_SEARCH_KEY) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const bing = require('./bingSearch.js');
-    return bing.searchCompanies(filters);
-  }
-
-  // No external connector configured
+  // No external connector configured or all failed
   return [];
 }

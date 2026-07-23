@@ -1,5 +1,7 @@
 import { getDb, addAuditLog, saveDatabaseToDisk } from './db.js';
 import { runScoutAISearch, runResearchAI, runSalesAgentDraft, runAICEOAnalysis } from './ai.js';
+import { findContactEmail } from './emailEnrichment.js';
+import { searchCompanies } from '../connectors/search/index.js';
 import { Company, AgentJob } from '../src/types/index.js';
 
 export class VoxlineBrain {
@@ -19,10 +21,29 @@ export class VoxlineBrain {
     db.agent_jobs.unshift(job);
 
     try {
-      const results = await runScoutAISearch(industry, region);
+      // Prefer real, verifiable business data (Google Places etc.) when a connector is configured.
+      const realCandidates = await searchCompanies({ industry, country: region, maxResults: 10 });
+      const usingRealData = realCandidates.length > 0;
+
+      // Only fall back to AI-generated demo leads when no real connector produced results,
+      // and mark them unmistakably as demo/unverified so they're never confused with real prospects.
+      const results = usingRealData
+        ? realCandidates.map(c => ({
+            name: c.name || `Unknown ${industry}`,
+            industry: c.industry || industry,
+            website: c.website || '',
+            phone: c.contact_info?.[0]?.phone || '',
+            email: c.contact_info?.[0]?.email || '',
+            instagram: '',
+            business_size: c.company_size || '11-50',
+            description: c.description || '',
+            source_url: c.source_url
+          }))
+        : await runScoutAISearch(industry, region);
+
       const newCompanies: Company[] = [];
 
-      for (const item of results) {
+      for (const item of results as any[]) {
         // Check for duplicates by domain or name
         const exists = db.companies.find(c => c.name.toLowerCase() === item.name.toLowerCase() || (c.website && item.website && c.website.toLowerCase() === item.website.toLowerCase()));
         if (!exists) {
@@ -32,15 +53,19 @@ export class VoxlineBrain {
             name: item.name,
             industry: item.industry || industry,
             address: `${region}, Armenia`,
-            website: item.website || `https://${item.name.toLowerCase().replace(/[^a-z]/g, '')}.am`,
-            phone: item.phone || '+374 10 000000',
-            email: item.email || `contact@${item.name.toLowerCase().replace(/[^a-z]/g, '')}.am`,
-            instagram: item.instagram || `@${item.name.toLowerCase().replace(/[^a-z]/g, '')}`,
+            website: item.website || (usingRealData ? '' : `https://${item.name.toLowerCase().replace(/[^a-z]/g, '')}.am`),
+            phone: item.phone || (usingRealData ? '' : '+374 10 000000'),
+            email: item.email || (usingRealData ? '' : `contact@${item.name.toLowerCase().replace(/[^a-z]/g, '')}.am`),
+            instagram: item.instagram || (usingRealData ? '' : `@${item.name.toLowerCase().replace(/[^a-z]/g, '')}`),
             business_size: item.business_size || '11-50',
             description: item.description || `Discovered company in ${industry}`,
             status: 'discovered',
             pipeline_stage: 'discovery',
-            source: 'Scout Agent — AI Search',
+            source: usingRealData ? 'Scout Agent — Google Places' : 'Scout Agent — AI Demo (unverified, no search connector configured)',
+            source_type: usingRealData ? 'real_web' : 'ai_demo',
+            is_verified: usingRealData,
+            verification_source: usingRealData ? item.source_url : null,
+            is_demo: !usingRealData,
             discovered_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             is_deleted: false,
@@ -76,6 +101,20 @@ export class VoxlineBrain {
     const db = getDb();
     const company = db.companies.find(c => c.id === companyId);
     if (!company) throw new Error('Company not found');
+
+    // Best-effort: if we discovered this company without an email (e.g. via Google Places),
+    // try to find one from their website before we score/draft outreach for them.
+    if (!company.email && company.website) {
+      try {
+        const found = await findContactEmail(company.website);
+        if (found) {
+          company.email = found;
+          company.updated_at = new Date().toISOString();
+        }
+      } catch (err) {
+        console.error('Email enrichment error:', err);
+      }
+    }
 
     const jobId = 'job-res-' + Date.now();
     const job: AgentJob = {
