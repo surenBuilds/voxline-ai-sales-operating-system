@@ -1,16 +1,22 @@
 import { loadJsonDb, saveJsonDb, backupJsonDb } from './jsonAdapter.js';
 import { DatabaseState } from '../../server/db.js';
+import { createRequire } from 'module';
 
+const require = createRequire(import.meta.url);
 const ADAPTER = (process.env.DATABASE_ADAPTER || 'json').toLowerCase();
 
 let supabaseAdapter: any = null;
-try {
-  if (ADAPTER === 'supabase') {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+if (ADAPTER === 'supabase') {
+  try {
+    // Use synchronous require via createRequire to load a CommonJS shim if present.
     supabaseAdapter = require('./supabaseAdapter.js');
+    if (!supabaseAdapter || typeof supabaseAdapter.getDb !== 'function' || typeof supabaseAdapter.saveDb !== 'function') {
+      throw new Error('supabaseAdapter.js must export getDb and saveDb functions');
+    }
+  } catch (err) {
+    // Fail loudly — do not silently fall back to JSON when the adapter is explicitly requested
+    throw new Error(`Failed to load supabaseAdapter.js for DATABASE_ADAPTER=supabase: ${err.message}`);
   }
-} catch (err) {
-  // ignore
 }
 
 export function getDb(): DatabaseState {
