@@ -7,6 +7,28 @@ import { runAIProposalGenerator } from './server/ai.js';
 import { sendMessageById } from './server/messaging.js';
 import { startAutonomousScheduler } from './server/scheduler.js';
 
+// TEMP DEBUG: log presence/length (never the value) of key env vars at boot,
+// to diagnose why some Railway variables weren't reaching process.env.
+{
+  const keys = [
+    'AUTO_DISCOVERY_INDUSTRIES',
+    'AUTO_DISCOVERY_REGION',
+    'AUTONOMOUS_MODE',
+    'RESEND_API_KEY',
+    'RESEND_FROM_EMAIL',
+    'GOOGLE_PLACES_API_KEY',
+    'GEMINI_API_KEY',
+    'NODE_ENV'
+  ];
+  const report: Record<string, string> = {};
+  for (const k of keys) {
+    const v = process.env[k];
+    report[k] = v === undefined ? 'UNDEFINED' : v.length === 0 ? 'EMPTY_STRING' : `SET(len=${v.length})`;
+  }
+  console.log('[TEMP DEBUG] env snapshot at boot:', JSON.stringify(report));
+  console.log('[TEMP DEBUG] total process.env key count:', Object.keys(process.env).length);
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT || 3000;
