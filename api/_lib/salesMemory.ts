@@ -2,10 +2,10 @@ import { getDb, saveDb } from '../_lib/dbAdapter.js';
 
 export function getSalesMemory(companyId: string) {
   const db = getDb();
-  return (db.ai_memory || []).filter((m: any) => m.company_id === companyId);
+  return (db.ai_memory_entries || []).filter((m: any) => m.company_id === companyId);
 }
 
-export function addSalesMemory(entry: { company_id: string; memory_type: string; content: string; confidence?: number; created_at?: string; workspace_id?: string }) {
+export function addSalesMemory(entry: { company_id: string; memory_type: 'rejection' | 'preference' | 'change_detected' | 'past_proposal' | 'key_decision'; content: string; confidence?: number; created_at?: string; workspace_id?: string | null }) {
   const db = getDb();
   const e = {
     id: 'mem-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
@@ -16,9 +16,9 @@ export function addSalesMemory(entry: { company_id: string; memory_type: string;
     created_at: entry.created_at || new Date().toISOString(),
     workspace_id: entry.workspace_id || null
   };
-  db.ai_memory = db.ai_memory || [];
-  db.ai_memory.unshift(e);
-  if (db.ai_memory.length > 5000) db.ai_memory.pop();
+  db.ai_memory_entries = db.ai_memory_entries || [];
+  db.ai_memory_entries.unshift(e);
+  if (db.ai_memory_entries.length > 5000) db.ai_memory_entries.pop();
   saveDb(db);
   return e;
 }

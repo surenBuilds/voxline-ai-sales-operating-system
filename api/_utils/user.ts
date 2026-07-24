@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 import {
   UserRole
-} from '../src/types/index.js';
+} from '../../src/types/index.js';
 
 export interface AuthUser {
   id: string;

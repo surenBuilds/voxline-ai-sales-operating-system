@@ -1,4 +1,5 @@
-import { getDb, saveDb } from '../api/_lib/dbAdapter.js';
+import { getDb, saveDb } from './dbAdapter.js';
+import { AgentJob } from '../../src/types/index.js';
 
 /**
  * Agent Job Manager
@@ -13,7 +14,7 @@ import { getDb, saveDb } from '../api/_lib/dbAdapter.js';
 export function createAgentJobRecord({ agent_id, job_type, company_id = null, input = {}, initiated_by = 'system', workspace_id = null, next_run_at = null, max_attempts = 3 }) {
   const db = getDb();
   const jobId = 'job-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
-  const job = {
+  const job: AgentJob = {
     id: jobId,
     agent_id,
     company_id,
@@ -105,7 +106,7 @@ export function completeJob(jobId, output = {}, expectedOwner = null) {
   return j;
 }
 
-export function failJob(jobId, errorObj = {}, retryDelaySeconds = 60, expectedOwner = null) {
+export function failJob(jobId, errorObj: { message?: string; detail?: any } = {}, retryDelaySeconds = 60, expectedOwner = null) {
   const db = getDb();
   const j = db.agent_jobs.find((x) => x.id === jobId);
   if (!j) throw new Error('Agent job not found');

@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV !== 'production' ? 'dev-secret-change-me' : undefined);
 
@@ -6,7 +6,7 @@ if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
   throw new Error('JWT_SECRET environment variable is required in production');
 }
 
-export function signToken(payload: any, expiresIn = '24h') {
+export function signToken(payload: any, expiresIn: SignOptions['expiresIn'] = '24h') {
   return jwt.sign(payload, JWT_SECRET as string, { expiresIn });
 }
 

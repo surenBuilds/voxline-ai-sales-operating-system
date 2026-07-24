@@ -33,7 +33,7 @@ export interface CompanyContact {
   is_verified?: boolean;
   is_demo?: boolean;
   created_at?: string;
-  workspace_id?: string;
+  workspace_id?: string | null;
 }
 
 export interface Company {
@@ -217,7 +217,7 @@ export interface AgentJob {
   agent_id: string;
   company_id?: string;
   job_type: string;
-  status: 'queued' | 'running' | 'success' | 'failed' | 'escalated';
+  status: 'queued' | 'running' | 'success' | 'failed' | 'escalated' | 'dead_letter';
   input: Record<string, any>;
   output?: Record<string, any> | any;
   retry_count: number;
@@ -226,7 +226,11 @@ export interface AgentJob {
   started_at?: string;
   completed_at?: string;
   initiated_by?: string;
-  workspace_id?: string;
+  workspace_id?: string | null;
+  max_attempts?: number;
+  next_run_at?: string | null;
+  lock_owner?: string | null;
+  locked_at?: string | null;
 }
 
 export interface KBArticle {

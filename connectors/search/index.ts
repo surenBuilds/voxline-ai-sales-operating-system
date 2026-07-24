@@ -4,7 +4,7 @@ export interface SearchCandidate {
   industry?: string;
   location?: string;
   company_size?: string;
-  contact_info?: { email?: string; phone?: string; linkedin?: string }[];
+  contact_info?: { name?: string; role?: string; title?: string; email?: string; phone?: string; linkedin?: string; confidence?: number; source?: string }[];
   description?: string;
   possible_problems?: string[];
   confidence?: number;

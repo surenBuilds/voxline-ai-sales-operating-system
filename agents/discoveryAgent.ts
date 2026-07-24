@@ -1,6 +1,7 @@
 import { searchCompanies } from '../connectors/search/index.js';
 import { getDb, saveDb } from '../api/_lib/dbAdapter.js';
 import { computeIcpScore } from '../api/_lib/icpScorer.js';
+import { Company } from '../src/types/index.js';
 
 export async function runDiscoveryAgent(input) {
   // input: { industries, countries, companySizes, businessType, technologyUsage, growthSignals, targetProfile, maxResults, workspace_id, initiated_by }
@@ -30,7 +31,7 @@ export async function runDiscoveryAgent(input) {
         const sourceType = isVerified ? 'real_web' : 'ai_demo';
 
         const id = 'comp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
-        const company = {
+        const company: Company = {
           id,
           name: c.name || `Unknown ${industry}`,
           industry: c.industry || industry,
@@ -43,8 +44,8 @@ export async function runDiscoveryAgent(input) {
           linkedin: c.linkedin || '',
           business_size: c.company_size || (companySizes[0] || '11-50'),
           description: c.description || '',
-          status: isVerified ? 'discovered' : 'discovered',
-          pipeline_stage: isVerified ? 'discovery' : 'discovery',
+          status: 'discovered',
+          pipeline_stage: 'discovery',
           source: isVerified ? (c.source_type || 'search_connector') : 'ai_demo',
           source_type: sourceType,
           is_verified: isVerified,
