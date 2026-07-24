@@ -200,13 +200,15 @@ Return JSON with:
 export async function runSalesAgentDraft(companyName: string, industry: string, summary: string, opportunities: string[], kbContext: string, lang = 'am') {
   const ai = getGenAI();
   const contactName = process.env.VOXLINE_CONTACT_NAME || 'Սուրեն';
-  const contactPhone = process.env.VOXLINE_CONTACT_PHONE || '+374 XX XXX XXX';
+  const contactPhone = process.env.VOXLINE_CONTACT_PHONE || '+37494879777';
+  const contactEmail = process.env.VOXLINE_CONTACT_EMAIL || process.env.RESEND_FROM_EMAIL || 'suren.hambartsumyan7@gmail.com';
   const defaultAmMsg = `Բարև Ձեզ, ${companyName}-ի թիմ! Voxline AI-ի անունից ուրախ ենք կապ հաստատել:
 Ուսումնասիրելով Ձեր ընկերության (${industry}) գործունեությունը՝ նկատեցինք, որ հաճախորդների սպասարկման ավտոմատացումը (օրինակ՝ ${opportunities[0] || '24/7 AI չաթբոտը'}) կարող է 3 անգամ կրճատել պատասխանների սպասման ժամանակը և բարձրացնել վաճառքների ծավալը:
 
 Կցանկանայի՞ք կարճ 15-րոպեանոց հանդիպման ընթացքում քննարկել, թե ինչպես կարող ենք ադապտացնել Voxline AI-ն Ձեր բիզնեսի համար:
 
 Կապի համար՝ ${contactPhone}
+Էլ․ փոստ՝ ${contactEmail}
 ${contactName}, Voxline AI`;
 
   if (!ai) return defaultAmMsg;
@@ -222,7 +224,7 @@ Requirements:
 - Emphasize clear ROI (e.g., 24/7 client engagement, faster response time, higher conversions).
 - Ground all facts in the Knowledge Base context provided.
 - Include a polite call to action to schedule a 15-minute call with Voxline CEO/Sales team.
-- Always include this exact contact block at the end: "Կապի համար՝ ${contactPhone}\n${contactName}, Voxline AI".
+- Always include this exact contact block at the end: "Կապի համար՝ ${contactPhone}\nԷլ․ փոստ՝ ${contactEmail}\n${contactName}, Voxline AI".
 - Do NOT sound overly robotic; sound like an expert AI systems consultant in Armenia.`;
 
     const response = await ai.models.generateContent({
