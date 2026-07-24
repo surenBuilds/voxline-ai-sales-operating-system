@@ -13,11 +13,7 @@ export interface SearchCandidate {
 }
 
 export async function searchCompanies(filters: any): Promise<SearchCandidate[]> {
-  // Google Places is the currently implemented real-data connector. It's only
-  // invoked if its API key is configured, so a missing key never crashes the
-  // agent — it just yields no verified leads (caller falls back to demo mode).
-  // Additional connectors (SerpAPI, Bing, etc.) can be added the same way:
-  // add a new file in this folder + a new `if (process.env.X_KEY)` branch here.
+  // 1) Google Places — real data, requires GOOGLE_PLACES_API_KEY + billing.
   if (process.env.GOOGLE_PLACES_API_KEY) {
     try {
       const places = await import('./googlePlaces.js');
@@ -26,6 +22,16 @@ export async function searchCompanies(filters: any): Promise<SearchCandidate[]> 
     } catch (err) {
       console.error('Google Places connector error:', err);
     }
+  }
+
+  // 2) OpenStreetMap — free fallback, no key or billing required.
+  //    Runs automatically when Google Places isn't configured.
+  try {
+    const osm = await import('./openStreetMap.js');
+    const results = (await osm.searchCompanies(filters)) as SearchCandidate[];
+    if (results.length > 0) return results;
+  } catch (err) {
+    console.error('OpenStreetMap connector error:', err);
   }
 
   // No external connector configured or all failed
