@@ -4,6 +4,31 @@ import { findContactEmail } from './emailEnrichment.js';
 import { searchCompanies } from '../connectors/search/index.js';
 import { Company, AgentJob } from '../src/types/index.js';
 
+// --- Free-tier Gemini quota guard ---
+// Gemini's free tier allows a limited number of requests per day (seen in
+// logs: "limit: 20"). Each company can cost up to 2 AI calls (research +
+// draft). Discovery can surface dozens of companies per tick across several
+// industries, which blows through the daily cap immediately. To keep the
+// system usable on the free tier, we cap how many AI calls we spend per
+// day and simply leave the rest of the discovered companies in
+// 'discovery' stage — they aren't lost, just not auto-processed until the
+// next day (or until you upgrade the Gemini plan).
+// Override the cap with GEMINI_DAILY_AI_CALL_CAP if needed.
+let aiCallDay = '';
+let aiCallsToday = 0;
+
+function canUseAIToday(): boolean {
+  const cap = Math.max(1, Number(process.env.GEMINI_DAILY_AI_CALL_CAP) || 16);
+  const today = new Date().toISOString().slice(0, 10);
+  if (aiCallDay !== today) {
+    aiCallDay = today;
+    aiCallsToday = 0;
+  }
+  if (aiCallsToday >= cap) return false;
+  aiCallsToday++;
+  return true;
+}
+
 export class VoxlineBrain {
   // 1. Trigger Scout Agent
   static async runScoutAgent(industry: string, region = 'Yerevan'): Promise<{ new_companies: Company[]; job: AgentJob }> {
@@ -76,8 +101,15 @@ export class VoxlineBrain {
           newCompanies.push(comp);
           addAuditLog('companies', compId, 'INSERT', null, comp);
 
-          // Automatically trigger Research Agent
-          this.runResearchAgent(compId).catch(err => console.error('Auto research error:', err));
+          // Automatically trigger Research Agent — but only while we're
+          // still within today's free-tier AI call budget. Companies past
+          // the cap stay in 'discovery' stage and can be processed
+          // manually or automatically once the quota resets.
+          if (canUseAIToday()) {
+            this.runResearchAgent(compId).catch(err => console.error('Auto research error:', err));
+          } else {
+            console.log(`[ScoutAgent] Daily AI call cap reached — leaving "${comp.name}" in discovery stage for now.`);
+          }
         }
       }
 
@@ -188,9 +220,14 @@ export class VoxlineBrain {
 
       addAuditLog('companies', companyId, 'UPDATE', null, { pipeline_stage: company.pipeline_stage, lead_score: score });
 
-      // Automatically trigger Sales Agent Draft if score >= 60
+      // Automatically trigger Sales Agent Draft if score >= 60 and we're
+      // still within today's free-tier AI call budget.
       if (score >= 60) {
-        this.runSalesAgentDraftJob(companyId).catch(e => console.error('Sales draft error:', e));
+        if (canUseAIToday()) {
+          this.runSalesAgentDraftJob(companyId).catch(e => console.error('Sales draft error:', e));
+        } else {
+          console.log(`[ResearchAgent] Daily AI call cap reached — leaving company ${companyId} qualified but undrafted for now.`);
+        }
       }
 
       job.status = 'success';
