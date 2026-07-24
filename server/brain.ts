@@ -5,20 +5,23 @@ import { searchCompanies } from '../connectors/search/index.js';
 import { Company, AgentJob } from '../src/types/index.js';
 
 // --- Free-tier Gemini quota guard ---
-// Gemini's free tier allows a limited number of requests per day (seen in
-// logs: "limit: 20"). Each company can cost up to 2 AI calls (research +
-// draft). Discovery can surface dozens of companies per tick across several
-// industries, which blows through the daily cap immediately. To keep the
-// system usable on the free tier, we cap how many AI calls we spend per
-// day and simply leave the rest of the discovered companies in
-// 'discovery' stage — they aren't lost, just not auto-processed until the
-// next day (or until you upgrade the Gemini plan).
-// Override the cap with GEMINI_DAILY_AI_CALL_CAP if needed.
+// Gemini's free tier has TWO limits that both matter here (seen in logs):
+//   - ~20 requests/day (RPD)
+//   - 5 requests/minute (RPM)
+// Discovery can trigger many companies' worth of AI calls in a tight burst
+// (research + draft, fired without waiting for each other), which blows
+// through the per-minute limit even while under the daily cap. reserveAISlot()
+// enforces both: a daily budget AND a minimum spacing between calls, via a
+// promise chain so concurrent callers still get serialized automatically.
+// Override with GEMINI_DAILY_AI_CALL_CAP / GEMINI_MIN_CALL_INTERVAL_MS.
 let aiCallDay = '';
 let aiCallsToday = 0;
+let aiQueueTail: Promise<void> = Promise.resolve();
 
-function canUseAIToday(): boolean {
+async function reserveAISlot(): Promise<boolean> {
   const cap = Math.max(1, Number(process.env.GEMINI_DAILY_AI_CALL_CAP) || 16);
+  const minIntervalMs = Math.max(1000, Number(process.env.GEMINI_MIN_CALL_INTERVAL_MS) || 13000); // ~5/min = 12s apart, +buffer
+
   const today = new Date().toISOString().slice(0, 10);
   if (aiCallDay !== today) {
     aiCallDay = today;
@@ -26,6 +29,15 @@ function canUseAIToday(): boolean {
   }
   if (aiCallsToday >= cap) return false;
   aiCallsToday++;
+
+  // Chain onto the shared queue so calls started around the same time still
+  // end up spaced out, regardless of which code path triggered them.
+  const previous = aiQueueTail;
+  let release: () => void = () => {};
+  aiQueueTail = new Promise((resolve) => { release = resolve; });
+  await previous;
+  await new Promise((r) => setTimeout(r, minIntervalMs));
+  release();
   return true;
 }
 
@@ -52,19 +64,26 @@ export class VoxlineBrain {
 
       // Only fall back to AI-generated demo leads when no real connector produced results,
       // and mark them unmistakably as demo/unverified so they're never confused with real prospects.
-      const results = usingRealData
-        ? realCandidates.map(c => ({
-            name: c.name || `Unknown ${industry}`,
-            industry: c.industry || industry,
-            website: c.website || '',
-            phone: c.contact_info?.[0]?.phone || '',
-            email: c.contact_info?.[0]?.email || '',
-            instagram: '',
-            business_size: c.company_size || '11-50',
-            description: c.description || '',
-            source_url: c.source_url
-          }))
-        : await runScoutAISearch(industry, region);
+      // This fallback itself is a Gemini call, so it goes through the same
+      // budget/spacing gate as research and draft calls.
+      let results: any[] = [];
+      if (usingRealData) {
+        results = realCandidates.map(c => ({
+          name: c.name || `Unknown ${industry}`,
+          industry: c.industry || industry,
+          website: c.website || '',
+          phone: c.contact_info?.[0]?.phone || '',
+          email: c.contact_info?.[0]?.email || '',
+          instagram: '',
+          business_size: c.company_size || '11-50',
+          description: c.description || '',
+          source_url: c.source_url
+        }));
+      } else if (await reserveAISlot()) {
+        results = await runScoutAISearch(industry, region);
+      } else {
+        console.log(`[ScoutAgent] Daily AI call cap reached — skipping AI-demo fallback search for ${industry}/${region}.`);
+      }
 
       const newCompanies: Company[] = [];
 
@@ -102,14 +121,16 @@ export class VoxlineBrain {
           addAuditLog('companies', compId, 'INSERT', null, comp);
 
           // Automatically trigger Research Agent — but only while we're
-          // still within today's free-tier AI call budget. Companies past
-          // the cap stay in 'discovery' stage and can be processed
-          // manually or automatically once the quota resets.
-          if (canUseAIToday()) {
-            this.runResearchAgent(compId).catch(err => console.error('Auto research error:', err));
-          } else {
-            console.log(`[ScoutAgent] Daily AI call cap reached — leaving "${comp.name}" in discovery stage for now.`);
-          }
+          // still within today's free-tier AI budget, and spaced out to
+          // respect the per-minute rate limit too. Fire-and-forget so
+          // discovery itself doesn't stall waiting for AI processing.
+          (async () => {
+            if (await reserveAISlot()) {
+              this.runResearchAgent(compId).catch(err => console.error('Auto research error:', err));
+            } else {
+              console.log(`[ScoutAgent] Daily AI call cap reached — leaving "${comp.name}" in discovery stage for now.`);
+            }
+          })();
         }
       }
 
@@ -221,13 +242,16 @@ export class VoxlineBrain {
       addAuditLog('companies', companyId, 'UPDATE', null, { pipeline_stage: company.pipeline_stage, lead_score: score });
 
       // Automatically trigger Sales Agent Draft if score >= 60 and we're
-      // still within today's free-tier AI call budget.
+      // still within today's free-tier AI budget (spaced to respect the
+      // per-minute limit too).
       if (score >= 60) {
-        if (canUseAIToday()) {
-          this.runSalesAgentDraftJob(companyId).catch(e => console.error('Sales draft error:', e));
-        } else {
-          console.log(`[ResearchAgent] Daily AI call cap reached — leaving company ${companyId} qualified but undrafted for now.`);
-        }
+        (async () => {
+          if (await reserveAISlot()) {
+            this.runSalesAgentDraftJob(companyId).catch(e => console.error('Sales draft error:', e));
+          } else {
+            console.log(`[ResearchAgent] Daily AI call cap reached — leaving company ${companyId} qualified but undrafted for now.`);
+          }
+        })();
       }
 
       job.status = 'success';

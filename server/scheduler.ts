@@ -21,6 +21,10 @@ async function runDiscoveryTick() {
   if (industries.length === 0) return; // Not configured — scheduler stays idle for discovery
 
   const region = process.env.AUTO_DISCOVERY_REGION || 'Yerevan';
+  // Space out requests between industries — OpenStreetMap's Overpass API
+  // rate-limits back-to-back requests (seen as HTTP 429 in logs), and this
+  // also naturally paces any Gemini AI fallback calls.
+  const betweenIndustriesMs = Math.max(1000, Number(process.env.DISCOVERY_INDUSTRY_DELAY_MS) || 8000);
 
   for (const industry of industries) {
     try {
@@ -29,6 +33,7 @@ async function runDiscoveryTick() {
     } catch (err: any) {
       console.error(`[scheduler] Scout Agent failed for ${industry}/${region}:`, err.message || err);
     }
+    await new Promise((r) => setTimeout(r, betweenIndustriesMs));
   }
 }
 
