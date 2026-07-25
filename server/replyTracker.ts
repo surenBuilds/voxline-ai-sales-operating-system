@@ -149,7 +149,13 @@ export async function checkForReplies(): Promise<{ checked: number; matched: num
       lock.release();
     }
   } catch (err: any) {
-    console.error('[replyTracker] IMAP check failed:', err.message || err);
+    console.error('[replyTracker] IMAP check failed:', {
+      message: err.message,
+      code: err.code,
+      authenticationFailed: err.authenticationFailed,
+      responseText: err.responseText,
+      response: err.response
+    });
   } finally {
     try {
       await client.logout();
