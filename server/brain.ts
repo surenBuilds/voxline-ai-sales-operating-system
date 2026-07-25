@@ -1,5 +1,6 @@
 import { getDb, addAuditLog, saveDatabaseToDisk } from './db.js';
 import { runScoutAISearch, runResearchAI, runSalesAgentDraft, runAICEOAnalysis } from './ai.js';
+import { buildMemoryContext } from './salesMemory.js';
 import { findContactEmail } from './emailEnrichment.js';
 import { searchCompanies } from '../connectors/search/index.js';
 import { Company, AgentJob } from '../src/types/index.js';
@@ -18,7 +19,7 @@ let aiCallDay = '';
 let aiCallsToday = 0;
 let aiQueueTail: Promise<void> = Promise.resolve();
 
-async function reserveAISlot(): Promise<boolean> {
+export async function reserveAISlot(): Promise<boolean> {
   const cap = Math.max(1, Number(process.env.GEMINI_DAILY_AI_CALL_CAP) || 16);
   const minIntervalMs = Math.max(1000, Number(process.env.GEMINI_MIN_CALL_INTERVAL_MS) || 13000); // ~5/min = 12s apart, +buffer
 
@@ -278,6 +279,11 @@ export class VoxlineBrain {
     const report = db.research_reports.find(r => r.company_id === companyId);
     const opps = db.opportunities.filter(o => o.company_id === companyId);
     const kbContext = db.kb_articles.map(k => `[${k.title}]: ${k.content}`).join('\n');
+    // Closed-loop learning: fold in what we remember about this company (and
+    // general lessons from other replies) so drafts reflect past outcomes
+    // instead of starting from zero every time.
+    const memoryContext = buildMemoryContext(companyId);
+    const fullContext = memoryContext ? `${kbContext}\n\n${memoryContext}` : kbContext;
 
     const oppGaps = opps.map(o => o.recommended_service);
     const draftText = await runSalesAgentDraft(
@@ -285,7 +291,7 @@ export class VoxlineBrain {
       company.industry,
       report?.summary || company.description,
       oppGaps.length ? oppGaps : ['Voxline AI 24/7 Chatbot'],
-      kbContext,
+      fullContext,
       lang
     );
 

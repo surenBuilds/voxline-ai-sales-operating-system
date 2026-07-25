@@ -239,6 +239,76 @@ Requirements:
   }
 }
 
+// 5. Reply Analysis Agent — reads an inbound reply and produces sentiment,
+//    a memory entry to remember for the future, and a concrete next step.
+export async function runReplyAnalysisAI(
+  companyName: string,
+  industry: string,
+  replyText: string,
+  priorContext: string
+): Promise<{
+  sentiment: 'interested' | 'not_interested' | 'question' | 'objection' | 'neutral';
+  memory_type: 'rejection' | 'preference' | 'change_detected' | 'past_proposal' | 'key_decision';
+  memory_content: string;
+  next_step: string;
+}> {
+  const ai = getGenAI();
+  const fallback = {
+    sentiment: 'neutral' as const,
+    memory_type: 'key_decision' as const,
+    memory_content: `${companyName} replied; content not auto-classified (AI unavailable).`,
+    next_step: 'Manually review the reply and decide on a next step.'
+  };
+  if (!ai) return fallback;
+
+  try {
+    const prompt = `You are a B2B sales analyst. Read this reply from a prospect and classify it.
+Company: ${companyName} (${industry})
+${priorContext ? `Prior context/memory:\n${priorContext}\n` : ''}
+Reply text:
+"""
+${replyText}
+"""
+
+Respond ONLY with a JSON object, no markdown, matching exactly this shape:
+{
+  "sentiment": "interested" | "not_interested" | "question" | "objection" | "neutral",
+  "memory_type": "rejection" | "preference" | "change_detected" | "past_proposal" | "key_decision",
+  "memory_content": "one or two sentences, in Armenian, summarizing what we should remember about this company for future outreach (e.g. why they declined, what they care about, a decision they made)",
+  "next_step": "one concrete, actionable next step in Armenian for the sales rep (e.g. schedule a call, send pricing, wait 2 weeks then follow up, mark as lost)"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            sentiment: { type: Type.STRING },
+            memory_type: { type: Type.STRING },
+            memory_content: { type: Type.STRING },
+            next_step: { type: Type.STRING }
+          },
+          required: ['sentiment', 'memory_type', 'memory_content', 'next_step']
+        }
+      }
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    return {
+      sentiment: parsed.sentiment || fallback.sentiment,
+      memory_type: parsed.memory_type || fallback.memory_type,
+      memory_content: parsed.memory_content || fallback.memory_content,
+      next_step: parsed.next_step || fallback.next_step
+    };
+  } catch (err) {
+    console.error('Reply analysis AI error:', err);
+    return fallback;
+  }
+}
+
 // 4. AI CEO Strategic Advisor
 export async function runAICEOAnalysis(metricsSummary: string) {
   const ai = getGenAI();

@@ -16,7 +16,7 @@ export interface User {
 
 export type CompanyStatus = 'discovered' | 'qualified' | 'contacted' | 'negotiating' | 'client' | 'unqualified' | 'archived';
 
-export type PipelineStage = 'discovery' | 'research_completed' | 'qualified_lead' | 'outreach_drafted' | 'contacted' | 'meeting_scheduled' | 'proposal_sent' | 'closed_won' | 'closed_lost';
+export type PipelineStage = 'discovery' | 'research_completed' | 'qualified_lead' | 'outreach_drafted' | 'contacted' | 'replied' | 'meeting_scheduled' | 'proposal_sent' | 'closed_won' | 'closed_lost';
 
 export interface CompanyContact {
   id: string;
@@ -71,6 +71,11 @@ export interface Company {
   icp_score?: number; // 0-100
   fit_reasons?: string[];
   sales_priority?: 'high' | 'medium' | 'low';
+  // Reply tracking / closed-loop learning
+  reply_sentiment?: 'interested' | 'not_interested' | 'question' | 'objection' | 'neutral';
+  next_step_suggestion?: string;
+  next_step_updated_at?: string;
+  last_reply_at?: string;
 }
 
 export interface ResearchReport {
