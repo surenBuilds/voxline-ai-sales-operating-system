@@ -442,7 +442,67 @@ async function startServer() {
     console.log(`Voxline AI OS running on http://0.0.0.0:${PORT}`);
   });
 
+  seedKnowledgeBaseIfEmpty();
   startAutonomousScheduler();
+}
+
+// One-time Knowledge Base seed with the company's real services/products,
+// so AI-generated outreach is grounded in accurate facts instead of generic
+// claims. Guarded by title so re-deploys never create duplicates.
+function seedKnowledgeBaseIfEmpty() {
+  const db = getDb();
+  const seedArticles = [
+    {
+      category: 'Company',
+      title: 'Ընկերության ընդհանուր տեղեկություն',
+      content:
+        'Voxline AI-ն արհեստական բանականության (ԱԲ) ծառայություններ մատուցող ընկերություն է։ ' +
+        'Իրականացնում ենք ԱԲ-ի հետ կապված ցանկացած ծառայություն՝ ներառյալ չաթբոտերի, կայքերի և ' +
+        'հավելվածների պատրաստում ամբողջական ցիկլով (նախագծում, մշակում, ինտեգրում, աջակցում)։'
+    },
+    {
+      category: 'Services',
+      title: 'Ծառայություններ',
+      content:
+        'Մեր հիմնական ծառայություններն են՝ Չաթբոտերի մշակում (հաճախորդների սպասարկում, վաճառքի ' +
+        'ավտոմատացում), ԱԲ-ով ինտեգրված կայքերի պատրաստում, ԱԲ-ով ինտեգրված հավելվածների (mobile/web) ' +
+        'մշակում, Բիզնես գործընթացների ավտոմատացում ԱԲ-ի միջոցով։'
+    },
+    {
+      category: 'Product',
+      title: 'Պրոդուկտ՝ Կրթլաբ',
+      content:
+        'Կրթլաբը ինքնակրթման հավելված է, որն աշխատում է արհեստական բանականության միջոցով։ ԱԲ-ն ' +
+        'ինքնուրույն կազմում է անհատականացված դասընթացներ օգտատիրոջ համար և շարունակաբար հետևում է ' +
+        'նրա առաջընթացին՝ դասընթացը հարմարեցնելով իրական արդյունքներին։'
+    },
+    {
+      category: 'Product',
+      title: 'Պրոդուկտ՝ Ատլաս',
+      content:
+        'Ատլասը հարթակ է, որտեղ ռոբոտները կարող են սովորել նոր հմտություններ։ Հարթակը ապահովում է ' +
+        'ռոբոտների ուսուցման միջավայր, որը թույլ է տալիս ընդլայնել ու զարգացնել ռոբոտների ' +
+        'հնարավորությունները նոր առաջադրանքների համար։'
+    }
+  ];
+
+  const existingTitles = new Set((db.kb_articles || []).map((a: any) => a.title));
+  let added = 0;
+  for (const seed of seedArticles) {
+    if (existingTitles.has(seed.title)) continue;
+    db.kb_articles.unshift({
+      id: 'kb-seed-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      ...seed,
+      version: 1,
+      is_published: true,
+      updated_at: new Date().toISOString()
+    } as any);
+    added++;
+  }
+  if (added > 0) {
+    saveDatabaseToDisk();
+    console.log(`[startup] Seeded Knowledge Base with ${added} new article(s).`);
+  }
 }
 
 startServer();
