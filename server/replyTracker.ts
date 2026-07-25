@@ -36,17 +36,6 @@ let isChecking = false;
 export async function checkForReplies(): Promise<{ checked: number; matched: number }> {
   const user = process.env.GMAIL_USER;
   const pass = process.env.GMAIL_APP_PASSWORD;
-
-  // TEMP DEBUG: shape-only diagnostics (no secret values logged) to figure
-  // out why Gmail is rejecting IMAP auth.
-  console.log('[replyTracker][TEMP DEBUG]', {
-    userLength: user?.length,
-    userLooksLikeEmail: !!user && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user),
-    userHasWhitespace: !!user && user !== user.trim(),
-    passLength: pass?.length,
-    passHasWhitespace: !!pass && pass !== pass.trim(),
-    passHasNonAlnum: !!pass && /[^a-zA-Z0-9]/.test(pass)
-  });
   if (!user || !pass) return { checked: 0, matched: 0 };
 
   if (isChecking) return { checked: 0, matched: 0 }; // avoid overlapping polls
