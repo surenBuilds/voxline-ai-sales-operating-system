@@ -452,6 +452,16 @@ async function startServer() {
     });
     res.json(result);
   });
+  app.get('/api/_temp_test_email', async (req, res) => {
+    const to = (req.query.to as string) || process.env.GMAIL_USER;
+    const result = await sendOutboundEmail({
+      to,
+      subject: 'Voxline AI OS — test email',
+      body: 'Սա test նամակ է, որով ստուգվում է, որ email provider-ը (Gmail SMTP կամ Resend) իրապես աշխատում է։\n\n— Voxline AI OS',
+      companyName: 'Test'
+    });
+    res.json(result);
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Voxline AI OS running on http://0.0.0.0:${PORT}`);
