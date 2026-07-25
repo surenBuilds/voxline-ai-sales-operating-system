@@ -12,24 +12,25 @@ import { Company, AgentJob } from '../src/types/index.js';
 // Discovery can trigger many companies' worth of AI calls in a tight burst
 // (research + draft, fired without waiting for each other), which blows
 // through the per-minute limit even while under the daily cap. reserveAISlot()
-// enforces both: a daily budget AND a minimum spacing between calls, via a
-// promise chain so concurrent callers still get serialized automatically.
+// enforces both: a daily budget (persisted to disk via the db, so it
+// survives restarts/redeploys — not just an in-memory counter) AND a
+// minimum spacing between calls, via a promise chain so concurrent callers
+// still get serialized automatically.
 // Override with GEMINI_DAILY_AI_CALL_CAP / GEMINI_MIN_CALL_INTERVAL_MS.
-let aiCallDay = '';
-let aiCallsToday = 0;
 let aiQueueTail: Promise<void> = Promise.resolve();
 
 export async function reserveAISlot(): Promise<boolean> {
   const cap = Math.max(1, Number(process.env.GEMINI_DAILY_AI_CALL_CAP) || 16);
   const minIntervalMs = Math.max(1000, Number(process.env.GEMINI_MIN_CALL_INTERVAL_MS) || 13000); // ~5/min = 12s apart, +buffer
 
+  const db = getDb();
   const today = new Date().toISOString().slice(0, 10);
-  if (aiCallDay !== today) {
-    aiCallDay = today;
-    aiCallsToday = 0;
+  if (!db.ai_call_budget || db.ai_call_budget.date !== today) {
+    db.ai_call_budget = { date: today, count: 0 };
   }
-  if (aiCallsToday >= cap) return false;
-  aiCallsToday++;
+  if (db.ai_call_budget.count >= cap) return false;
+  db.ai_call_budget.count++;
+  saveDatabaseToDisk();
 
   // Chain onto the shared queue so calls started around the same time still
   // end up spaced out, regardless of which code path triggered them.

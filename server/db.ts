@@ -8,7 +8,11 @@ import {
 import fs from 'fs';
 import path from 'path';
 
-const DATA_FILE = path.join(process.cwd(), 'voxline_data.json');
+// Use the persistent volume mounted at /app/data in production (Railway),
+// so data survives redeploys/restarts. Falls back to the working directory
+// for local development where no volume is mounted.
+const DATA_DIR = fs.existsSync('/app/data') ? '/app/data' : process.cwd();
+const DATA_FILE = path.join(DATA_DIR, 'voxline_data.json');
 
 // Memory state
 export interface DatabaseState {
@@ -36,6 +40,7 @@ export interface DatabaseState {
   ai_memory_entries: AIMemoryEntry[];
   learning_experiments: LearningExperiment[];
   plugins: PluginSystem[];
+  ai_call_budget: { date: string; count: number };
 }
 
 let db: DatabaseState = {
@@ -66,7 +71,8 @@ let db: DatabaseState = {
   revenue_forecasts: [],
   ai_memory_entries: [],
   learning_experiments: [],
-  plugins: []
+  plugins: [],
+  ai_call_budget: { date: '', count: 0 }
 };
 
 function seedDatabaseIfEmpty() {
@@ -433,7 +439,11 @@ export function loadDatabaseFromDisk(): DatabaseState {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const content = fs.readFileSync(DATA_FILE, 'utf-8');
-      db = JSON.parse(content);
+      const loaded = JSON.parse(content);
+      // Merge onto current in-memory defaults so any field added to the
+      // schema after this data file was written doesn't come back
+      // undefined (which would crash code that assumes it's an array).
+      db = { ...db, ...loaded };
     } else {
       seedDatabaseIfEmpty();
     }
