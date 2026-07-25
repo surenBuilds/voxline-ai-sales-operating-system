@@ -6,6 +6,7 @@ import { VoxlineBrain } from './server/brain.js';
 import { runAIProposalGenerator } from './server/ai.js';
 import { sendMessageById } from './server/messaging.js';
 import { startAutonomousScheduler } from './server/scheduler.js';
+import { sendOutboundEmail } from './server/email.js';
 
 async function startServer() {
   const app = express();
@@ -437,6 +438,20 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // TEMP: one-off manual test route to verify the email provider (Gmail
+  // SMTP / Resend) works end-to-end without going through the AI pipeline.
+  // Remove after verifying.
+  app.post('/api/_temp_test_email', async (req, res) => {
+    const to = (req.body && req.body.to) || process.env.GMAIL_USER;
+    const result = await sendOutboundEmail({
+      to,
+      subject: 'Voxline AI OS — test email',
+      body: 'Սա test նամակ է, որով ստուգվում է, որ email provider-ը (Gmail SMTP կամ Resend) իրապես աշխատում է։\n\n— Voxline AI OS',
+      companyName: 'Test'
+    });
+    res.json(result);
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Voxline AI OS running on http://0.0.0.0:${PORT}`);
