@@ -4,20 +4,26 @@
 // Docs: https://wiki.openstreetmap.org/wiki/Overpass_API
 //       https://nominatim.org/release-docs/latest/api/Search/
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+// Multiple public Overpass mirrors — if one rate-limits us (429) or errors,
+// try the next, so a single busy mirror doesn't stall discovery.
+const OVERPASS_URLS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.ru/api/interpreter'
+];
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const USER_AGENT = 'VoxlineAI-BusinessDiscovery/1.0 (contact: set RESEND_FROM_EMAIL)';
 
 // Rough mapping from free-text industry names to OSM tag values.
 // OSM uses shop=*, office=*, and amenity=* namespaces for most businesses.
 const INDUSTRY_TAG_MAP = {
-  technology: ['office=it', 'shop=computer', 'office=coworking'],
+  technology: ['office=it', 'shop=computer', 'office=coworking', 'office=software', 'shop=mobile_phone'],
   retail: ['shop=*'],
-  hospitality: ['amenity=restaurant', 'amenity=cafe', 'tourism=hotel'],
-  healthcare: ['amenity=clinic', 'amenity=doctors', 'amenity=dentist', 'amenity=pharmacy'],
-  finance: ['office=financial', 'office=insurance', 'amenity=bank'],
-  education: ['amenity=school', 'office=educational_institution'],
-  manufacturing: ['man_made=works', 'landuse=industrial'],
+  hospitality: ['amenity=restaurant', 'amenity=cafe', 'tourism=hotel', 'amenity=fast_food', 'amenity=bar'],
+  healthcare: ['amenity=clinic', 'amenity=doctors', 'amenity=dentist', 'amenity=pharmacy', 'amenity=hospital'],
+  finance: ['office=financial', 'office=insurance', 'amenity=bank', 'office=accountant'],
+  education: ['amenity=school', 'office=educational_institution', 'amenity=university', 'amenity=language_school'],
+  manufacturing: ['man_made=works', 'landuse=industrial', 'craft=*'],
   'real estate': ['office=estate_agent']
 };
 
@@ -63,17 +69,30 @@ async function queryOverpass(bbox, tags, maxResults) {
     out center ${maxResults * 2};
   `;
 
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': USER_AGENT
-    },
-    body: `data=${encodeURIComponent(query)}`
-  });
-  if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-  const data = await res.json();
-  return data.elements || [];
+  let lastErr;
+  for (const url of OVERPASS_URLS) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': USER_AGENT
+        },
+        body: `data=${encodeURIComponent(query)}`
+      });
+      if (res.status === 429 || res.status === 504) {
+        lastErr = new Error(`Overpass HTTP ${res.status} at ${url}`);
+        continue; // try next mirror
+      }
+      if (!res.ok) throw new Error(`Overpass HTTP ${res.status} at ${url}`);
+      const data = await res.json();
+      return data.elements || [];
+    } catch (err) {
+      lastErr = err;
+      // network error or timeout — try next mirror
+    }
+  }
+  throw lastErr || new Error('All Overpass mirrors failed');
 }
 
 function elementToCandidate(el, industry) {

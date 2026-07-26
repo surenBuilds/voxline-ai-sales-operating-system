@@ -1,5 +1,5 @@
 import { getDb, addAuditLog, saveDatabaseToDisk } from './db.js';
-import { runScoutAISearch, runResearchAI, runSalesAgentDraft, runAICEOAnalysis } from './ai.js';
+import { runResearchAI, runSalesAgentDraft, runAICEOAnalysis } from './ai.js';
 import { buildMemoryContext } from './salesMemory.js';
 import { findContactEmail } from './emailEnrichment.js';
 import { searchCompanies } from '../connectors/search/index.js';
@@ -60,14 +60,16 @@ export class VoxlineBrain {
     db.agent_jobs.unshift(job);
 
     try {
-      // Prefer real, verifiable business data (Google Places etc.) when a connector is configured.
-      const realCandidates = await searchCompanies({ industry, country: region, maxResults: 10 });
+      // Prefer real, verifiable business data (OpenStreetMap/Google Places).
+      // Increased maxResults so each tick surfaces more real companies.
+      const realCandidates = await searchCompanies({ industry, country: region, maxResults: 25 });
       const usingRealData = realCandidates.length > 0;
 
-      // Only fall back to AI-generated demo leads when no real connector produced results,
-      // and mark them unmistakably as demo/unverified so they're never confused with real prospects.
-      // This fallback itself is a Gemini call, so it goes through the same
-      // budget/spacing gate as research and draft calls.
+      // No more AI-demo fallback: fictional companies with made-up domains
+      // caused real bounce-backs once autonomous send was on. If a real
+      // connector found nothing this tick, we simply surface nothing for
+      // this industry — it'll be retried on the next discovery tick rather
+      // than inventing fake leads.
       let results: any[] = [];
       if (usingRealData) {
         results = realCandidates.map(c => ({
@@ -81,10 +83,8 @@ export class VoxlineBrain {
           description: c.description || '',
           source_url: c.source_url
         }));
-      } else if (await reserveAISlot()) {
-        results = await runScoutAISearch(industry, region);
       } else {
-        console.log(`[ScoutAgent] Daily AI call cap reached — skipping AI-demo fallback search for ${industry}/${region}.`);
+        console.log(`[ScoutAgent] No real companies found for ${industry}/${region} this tick (will retry later).`);
       }
 
       const newCompanies: Company[] = [];
