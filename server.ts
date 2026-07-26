@@ -424,56 +424,6 @@ async function startServer() {
     res.json({ note });
   });
 
-  // TEMP: one-off manual test route to verify the email provider (Gmail
-  // SMTP / Resend) works end-to-end without going through the AI pipeline.
-  // Remove after verifying.
-  // TEMP: one-off endpoint to exchange a Google OAuth authorization code for
-  // a refresh token, since this server has real internet access to Google's
-  // OAuth endpoints. Remove after use.
-  app.get('/api/_temp_oauth_exchange', async (req, res) => {
-    try {
-      const code = req.query.code as string;
-      if (!code) return res.status(400).json({ error: 'Missing ?code=' });
-
-      const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: process.env.GMAIL_OAUTH_CLIENT_ID || '',
-          client_secret: process.env.GMAIL_OAUTH_CLIENT_SECRET || '',
-          code,
-          grant_type: 'authorization_code',
-          redirect_uri: 'http://localhost'
-        })
-      });
-      const data = await tokenRes.json();
-      res.json(data);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || String(err) });
-    }
-  });
-
-  app.post('/api/_temp_test_email', async (req, res) => {
-    const to = (req.body && req.body.to) || process.env.GMAIL_USER;
-    const result = await sendOutboundEmail({
-      to,
-      subject: 'Voxline AI OS — test email',
-      body: 'Սա test նամակ է, որով ստուգվում է, որ email provider-ը (Gmail SMTP կամ Resend) իրապես աշխատում է։\n\n— Voxline AI OS',
-      companyName: 'Test'
-    });
-    res.json(result);
-  });
-  app.get('/api/_temp_test_email', async (req, res) => {
-    const to = (req.query.to as string) || process.env.GMAIL_USER;
-    const result = await sendOutboundEmail({
-      to,
-      subject: 'Voxline AI OS — test email',
-      body: 'Սա test նամակ է, որով ստուգվում է, որ email provider-ը (Gmail SMTP կամ Resend) իրապես աշխատում է։\n\n— Voxline AI OS',
-      companyName: 'Test'
-    });
-    res.json(result);
-  });
-
   // VITE MIDDLEWARE OR STATIC SERVING
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
