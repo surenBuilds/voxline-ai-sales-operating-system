@@ -424,21 +424,6 @@ async function startServer() {
     res.json({ note });
   });
 
-  // VITE MIDDLEWARE OR STATIC SERVING
-  if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa'
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-
   // TEMP: one-off manual test route to verify the email provider (Gmail
   // SMTP / Resend) works end-to-end without going through the AI pipeline.
   // Remove after verifying.
@@ -488,6 +473,21 @@ async function startServer() {
     });
     res.json(result);
   });
+
+  // VITE MIDDLEWARE OR STATIC SERVING
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa'
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Voxline AI OS running on http://0.0.0.0:${PORT}`);
