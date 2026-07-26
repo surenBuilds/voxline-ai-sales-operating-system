@@ -122,17 +122,23 @@ export class VoxlineBrain {
           newCompanies.push(comp);
           addAuditLog('companies', compId, 'INSERT', null, comp);
 
-          // Automatically trigger Research Agent — but only while we're
-          // still within today's free-tier AI budget, and spaced out to
+          // Automatically trigger Research Agent — but only for real
+          // companies (never AI-demo placeholders, which have fictional
+          // contact info and would just waste AI budget), and only while
+          // we're still within today's free-tier AI budget, spaced out to
           // respect the per-minute rate limit too. Fire-and-forget so
           // discovery itself doesn't stall waiting for AI processing.
-          (async () => {
-            if (await reserveAISlot()) {
-              this.runResearchAgent(compId).catch(err => console.error('Auto research error:', err));
-            } else {
-              console.log(`[ScoutAgent] Daily AI call cap reached — leaving "${comp.name}" in discovery stage for now.`);
-            }
-          })();
+          if (comp.is_demo) {
+            console.log(`[ScoutAgent] "${comp.name}" is AI-demo data (no real connector result) — skipping AI research/outreach, left in discovery stage.`);
+          } else {
+            (async () => {
+              if (await reserveAISlot()) {
+                this.runResearchAgent(compId).catch(err => console.error('Auto research error:', err));
+              } else {
+                console.log(`[ScoutAgent] Daily AI call cap reached — leaving "${comp.name}" in discovery stage for now.`);
+              }
+            })();
+          }
         }
       }
 

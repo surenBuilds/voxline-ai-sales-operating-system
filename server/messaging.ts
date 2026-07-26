@@ -18,6 +18,24 @@ export async function sendMessageById(messageId: string): Promise<{ ok: boolean;
   const conv = db.conversations.find((c) => c.id === msg.conversation_id);
   const comp = conv ? db.companies.find((c) => c.id === conv.company_id) : null;
 
+  // Never actually send to AI-generated demo companies — their contact info
+  // is fictional (used only as a placeholder when no real search connector
+  // returned results), so a "send" here can only bounce or, worse, land on
+  // a real inbox that happens to share a made-up domain by coincidence.
+  if (comp?.is_demo) {
+    msg.status = 'failed';
+    addAuditLog('messages', msg.id, 'UPDATE', null, {
+      status: 'failed',
+      error: 'Refused to send: company is AI-generated demo data (is_demo=true), not a real prospect'
+    });
+    saveDatabaseToDisk();
+    return {
+      ok: false,
+      status: 422,
+      body: { error: 'This company is AI-generated demo data with fictional contact info — refusing to send a real email to it.', message: msg }
+    };
+  }
+
   let deliveryResult: { success: boolean; error?: string; provider_message_id?: string } = {
     success: false,
     error: 'No delivery channel available'
