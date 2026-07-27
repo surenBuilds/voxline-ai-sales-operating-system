@@ -341,6 +341,67 @@ export class VoxlineBrain {
     return { conversation: conv, message: msg };
   }
 
+  // Catch-up sweep: finds real companies (never demo, always with an
+  // email) that got stuck mid-pipeline on a previous run because the daily
+  // AI budget ran out before their research or draft step could fire, and
+  // retries them. Without this, any company that missed its turn once
+  // would sit there forever — this is what actually closes the loop so
+  // the backlog of already-discovered companies keeps moving forward,
+  // not just newly-discovered ones.
+  static async runCatchUpSweep(): Promise<{ researched: number; drafted: number }> {
+    const db = getDb();
+    let researched = 0;
+    let drafted = 0;
+
+    // 1) Real, contactable companies still sitting in 'discovery' with no
+    //    research report yet (their auto-research call never happened or
+    //    got capped).
+    const needsResearch = db.companies.filter(
+      (c) =>
+        !c.is_deleted &&
+        !c.is_demo &&
+        c.email &&
+        c.pipeline_stage === 'discovery' &&
+        !db.research_reports.some((r) => r.company_id === c.id)
+    );
+    for (const c of needsResearch) {
+      if (!(await reserveAISlot())) break; // out of budget for this run — rest will retry next sweep
+      try {
+        await this.runResearchAgent(c.id);
+        researched++;
+      } catch (err) {
+        console.error(`[CatchUp] Research failed for ${c.name}:`, err);
+      }
+    }
+
+    // 2) Companies whose research completed (score >= 60) but never got an
+    //    outreach draft — e.g. the daily budget ran out right after
+    //    research finished.
+    const needsDraft = db.companies.filter(
+      (c) =>
+        !c.is_deleted &&
+        !c.is_demo &&
+        c.email &&
+        c.pipeline_stage === 'research_completed' &&
+        (c.lead_score || 0) >= 60 &&
+        !db.conversations.some((conv) => conv.company_id === c.id)
+    );
+    for (const c of needsDraft) {
+      if (!(await reserveAISlot())) break;
+      try {
+        await this.runSalesAgentDraftJob(c.id);
+        drafted++;
+      } catch (err) {
+        console.error(`[CatchUp] Draft failed for ${c.name}:`, err);
+      }
+    }
+
+    if (researched > 0 || drafted > 0) {
+      console.log(`[CatchUp] Retried ${researched} stuck research job(s), ${drafted} stuck draft job(s).`);
+    }
+    return { researched, drafted };
+  }
+
   // 4. Trigger AI CEO Analysis
   static async runAICEOEngine(): Promise<any> {
     const db = getDb();

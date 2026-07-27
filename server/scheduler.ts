@@ -58,6 +58,14 @@ async function runAutonomousSendTick() {
   }
 }
 
+async function runCatchUpTick() {
+  try {
+    await VoxlineBrain.runCatchUpSweep();
+  } catch (err: any) {
+    console.error('[scheduler] Catch-up sweep failed:', err.message || err);
+  }
+}
+
 async function runReplyCheckTick() {
   try {
     const { checked, matched } = await checkForReplies();
@@ -93,4 +101,11 @@ export function startAutonomousScheduler() {
   const replyCheckIntervalMs = Math.max(1, Number(process.env.REPLY_CHECK_INTERVAL_MIN) || 5) * 60 * 1000;
   setTimeout(runReplyCheckTick, 20000);
   setInterval(runReplyCheckTick, replyCheckIntervalMs);
+
+  // Catch-up sweep: retries any already-discovered real company that got
+  // stuck mid-pipeline (research or draft skipped because the AI budget
+  // ran out). Runs on its own cadence, independent of new discovery.
+  const catchUpIntervalMs = Math.max(1, Number(process.env.CATCH_UP_INTERVAL_MIN) || 30) * 60 * 1000;
+  setTimeout(runCatchUpTick, 45000);
+  setInterval(runCatchUpTick, catchUpIntervalMs);
 }
