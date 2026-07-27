@@ -1,7 +1,17 @@
 import { getDb, addAuditLog, saveDatabaseToDisk } from './db.js';
 import { sendOutboundEmail } from './email.js';
 
+// Prevents the same message from being sent twice if two triggers overlap
+// (e.g. a manual "Send" click in the UI landing at the same moment as the
+// autonomous send tick, or two ticks overlapping if one run takes longer
+// than the interval).
+const currentlySending = new Set<string>();
+
 export async function sendMessageById(messageId: string): Promise<{ ok: boolean; status: number; body: any }> {
+  if (currentlySending.has(messageId)) {
+    return { ok: false, status: 409, body: { error: 'This message is already being sent (concurrent send prevented).' } };
+  }
+
   const db = getDb();
   const msg = db.messages.find((m) => m.id === messageId);
   if (!msg) return { ok: false, status: 404, body: { error: 'Message not found' } };
@@ -14,6 +24,16 @@ export async function sendMessageById(messageId: string): Promise<{ ok: boolean;
   if (msg.status === 'pending_approval' && !autonomous) {
     return { ok: false, status: 403, body: { error: 'Message requires human approval before sending. Approve it first, or enable AUTONOMOUS_MODE.' } };
   }
+
+  currentlySending.add(messageId);
+  try {
+    return await deliverMessage(db, msg);
+  } finally {
+    currentlySending.delete(messageId);
+  }
+}
+
+async function deliverMessage(db: ReturnType<typeof getDb>, msg: ReturnType<typeof getDb>['messages'][number]) {
 
   const conv = db.conversations.find((c) => c.id === msg.conversation_id);
   const comp = conv ? db.companies.find((c) => c.id === conv.company_id) : null;

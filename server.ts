@@ -37,7 +37,17 @@ async function startServer() {
   });
 
   app.post('/api/auth/login', (req, res) => {
-    const { email } = req.body;
+    const { email, password } = req.body;
+
+    // Require a shared password if VOXLINE_APP_PASSWORD is configured.
+    // Without this, anyone who finds the URL could log in as CEO with
+    // just any email address — this closes that gap. If the env var
+    // isn't set, login stays open (dev/local convenience).
+    const requiredPassword = process.env.VOXLINE_APP_PASSWORD;
+    if (requiredPassword && password !== requiredPassword) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
     const db = getDb();
     const user = db.users.find(u => u.email === email) || db.users[0];
     res.json({ user, token: 'voxline-jwt-session-' + Date.now() });
