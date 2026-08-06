@@ -58,7 +58,11 @@ export async function checkForReplies(): Promise<{ checked: number; matched: num
     try {
       // Only look at unseen messages — each one gets marked seen once processed,
       // so re-running this on a timer never reprocesses the same email twice.
-      const uids = await client.search({ seen: false });
+      // IMPORTANT: must pass { uid: true } here too, otherwise search()
+      // returns sequence numbers while download()/messageFlagsAdd() below
+      // are called in uid:true mode — a mismatch that silently flags the
+      // wrong message as seen and makes the real match loop forever.
+      const uids = await client.search({ seen: false }, { uid: true });
       if (!uids || uids.length === 0) return { checked: 0, matched: 0 };
 
       const db = getDb();
