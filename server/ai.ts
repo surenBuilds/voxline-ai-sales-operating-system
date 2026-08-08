@@ -201,31 +201,37 @@ export async function runSalesAgentDraft(companyName: string, industry: string, 
   const ai = getGenAI();
   const contactName = process.env.VOXLINE_CONTACT_NAME || 'Սուրեն';
   const contactPhone = process.env.VOXLINE_CONTACT_PHONE || '+37494879777';
-  const contactEmail = process.env.VOXLINE_CONTACT_EMAIL || process.env.RESEND_FROM_EMAIL || 'suren.hambartsumyan7@gmail.com';
-  const defaultAmMsg = `Բարև Ձեզ, ${companyName}-ի թիմ! Voxline AI-ի անունից ուրախ ենք կապ հաստատել:
-Ուսումնասիրելով Ձեր ընկերության (${industry}) գործունեությունը՝ նկատեցինք, որ հաճախորդների սպասարկման ավտոմատացումը (օրինակ՝ ${opportunities[0] || '24/7 AI չաթբոտը'}) կարող է 3 անգամ կրճատել պատասխանների սպասման ժամանակը և բարձրացնել վաճառքների ծավալը:
+  const defaultAmMsg = `Բարև Ձեզ, ${companyName}-ի թիմ!
 
-Կցանկանայի՞ք կարճ 15-րոպեանոց հանդիպման ընթացքում քննարկել, թե ինչպես կարող ենք ադապտացնել Voxline AI-ն Ձեր բիզնեսի համար:
+Մենք Voxline AI-ից ենք՝ արհեստական բանականությամբ աշխատող թվային աշխատակիցներ և համակարգեր կառուցող թիմ։ Ուսումնասիրելով Ձեր ընկերության (${industry}) գործունեությունը՝ տեսանք, թե ինչպես ԱԲ աշխատակիցը կարող է ստանձնել ${opportunities[0] || 'հաճախորդների սպասարկումն ու առաջին գծի աշխատանքը'}, աշխատելով 24/7, առանց հոգնածության։
 
-Կապի համար՝ ${contactPhone}
-Էլ․ փոստ՝ ${contactEmail}
-${contactName}, Voxline AI`;
+Կցանկանայի՞ք կարճ 15-րոպեանոց հանդիպման ընթացքում քննարկել, թե ինչպիսի ԱԲ աշխատակից կարող ենք կառուցել հատուկ Ձեր բիզնեսի համար:
+
+${contactName}
+${contactPhone}
+Voxline AI`;
 
   if (!ai) return defaultAmMsg;
 
   try {
-    const prompt = `You are Voxline AI Sales Agent. Write a highly persuasive, respectful, professional B2B outreach message in language "${lang}" (default Armenian).
+    const prompt = `You are Voxline AI's sales outreach writer. Write a highly persuasive, respectful, professional B2B outreach message in language "${lang}" (default Armenian).
 Target Company: ${companyName} (${industry})
 Research Summary: ${summary}
 Identified Automation Gaps: ${opportunities.join(', ')}
-Knowledge Base Grounding: ${kbContext}
+Knowledge Base Grounding (company info, services, products — ground all factual claims in this): ${kbContext}
 
-Requirements:
-- Emphasize clear ROI (e.g., 24/7 client engagement, faster response time, higher conversions).
+POSITIONING — this is the most important instruction:
+- Voxline AI is NOT a "simple chatbot" or "basic automation" vendor. Position Voxline as a builder of AI EMPLOYEES and complete AI-driven systems — digital team members that handle real work (customer service, sales qualification, scheduling, research, support), not just scripted bots.
+- Never use dismissive/generic phrasing like "just a chatbot". Frame the offering as hiring an AI colleague / AI-native operating system for the business.
+- If the target company's industry is Education, Robotics, or clearly involves teaching/training or building physical/robotic products, naturally mention the relevant Voxline product from the Knowledge Base context (Կրթլաբ for education/training-related companies, Ատլաս for robotics/robot-building companies) as a specifically relevant fit — do not force it if the industry is unrelated (e.g. a restaurant or pharmacy should NOT get a Կրթլաբ/Ատլաս pitch).
+- Otherwise, focus the pitch on the general AI-employee positioning and the specific automation gap identified for this company.
+
+Other requirements:
+- Emphasize clear ROI (e.g., 24/7 engagement, faster response time, higher conversions).
 - Ground all facts in the Knowledge Base context provided.
-- Include a polite call to action to schedule a 15-minute call with Voxline CEO/Sales team.
-- Always include this exact contact block at the end: "Կապի համար՝ ${contactPhone}\nԷլ․ փոստ՝ ${contactEmail}\n${contactName}, Voxline AI".
-- Do NOT sound overly robotic; sound like an expert AI systems consultant in Armenia.`;
+- Include a polite call to action to schedule a 15-minute call.
+- End the message with EXACTLY this sign-off block and nothing else after it (name and phone only — no email address): "${contactName}\n${contactPhone}\nVoxline AI"
+- Do NOT sound overly robotic or use generic sales clichés; sound like a confident AI systems consultant based in Armenia.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.6-flash',

@@ -14,6 +14,30 @@ const OVERPASS_URLS = [
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const USER_AGENT = 'VoxlineAI-BusinessDiscovery/1.0 (contact: set RESEND_FROM_EMAIL)';
 
+// Per-request timeout — without this, a stalled connection to a busy public
+// mirror hangs until the platform kills it, surfacing as an opaque
+// "fetch failed" with no useful diagnostic.
+const FETCH_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Nominatim's usage policy caps requests at ~1/sec and expects callers to
+// cache results. The scheduler calls searchCompanies() once per industry per
+// tick (7+ times back to back), so without caching we were hammering
+// Nominatim repeatedly for the *same* country lookup and getting throttled —
+// which is what was silently breaking discovery on every tick. Cache the
+// resolved bounding box per location for the life of the process.
+const bboxCache = new Map();
+const BBOX_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — country borders don't move
+
 // Rough mapping from free-text industry names to OSM tag values.
 // OSM uses shop=*, office=*, and amenity=* namespaces for most businesses.
 const INDUSTRY_TAG_MAP = {
@@ -22,9 +46,13 @@ const INDUSTRY_TAG_MAP = {
   hospitality: ['amenity=restaurant', 'amenity=cafe', 'tourism=hotel', 'amenity=fast_food', 'amenity=bar'],
   healthcare: ['amenity=clinic', 'amenity=doctors', 'amenity=dentist', 'amenity=pharmacy', 'amenity=hospital'],
   finance: ['office=financial', 'office=insurance', 'amenity=bank', 'office=accountant'],
-  education: ['amenity=school', 'office=educational_institution', 'amenity=university', 'amenity=language_school'],
+  education: ['amenity=school', 'office=educational_institution', 'amenity=university', 'amenity=language_school', 'amenity=college'],
   manufacturing: ['man_made=works', 'landuse=industrial', 'craft=*'],
-  'real estate': ['office=estate_agent']
+  'real estate': ['office=estate_agent'],
+  // Robotics companies are rare enough in OSM that we cast a wide net
+  // across the tags most likely to catch engineering/robotics/electronics
+  // firms in Armenia — Atlas's target segment.
+  robotics: ['office=engineering', 'craft=electronics_repair', 'shop=electronics', 'office=research', 'craft=*']
 };
 
 function tagsForIndustry(industry) {
@@ -33,24 +61,40 @@ function tagsForIndustry(industry) {
 }
 
 // Step 1: resolve a city/country name to a bounding box via Nominatim.
+// Cached — see BBOX_CACHE_TTL_MS above for why this matters.
 async function resolveArea(location) {
+  const cacheKey = location.toLowerCase().trim();
+  const cached = bboxCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.bbox;
+  }
+
   const params = new URLSearchParams({ q: location, format: 'json', limit: '1' });
-  const res = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {
-    headers: { 'User-Agent': USER_AGENT }
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(`${NOMINATIM_URL}?${params.toString()}`, {
+      headers: { 'User-Agent': USER_AGENT }
+    });
+  } catch (err) {
+    throw new Error(`Nominatim request failed: ${err.message || err}`);
+  }
   if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
   const data = await res.json();
-  if (!data.length) return null;
-  const { boundingbox } = data[0]; // [south, north, west, east] as strings
-  return {
+  if (!data.length) {
+    bboxCache.set(cacheKey, { bbox: null, expiresAt: Date.now() + 60 * 60 * 1000 });
+    return null;
+  }
+  const { boundingbox } = data[0];
+  const bbox = {
     south: parseFloat(boundingbox[0]),
     north: parseFloat(boundingbox[1]),
     west: parseFloat(boundingbox[2]),
     east: parseFloat(boundingbox[3])
   };
+  bboxCache.set(cacheKey, { bbox, expiresAt: Date.now() + BBOX_CACHE_TTL_MS });
+  return bbox;
 }
 
-// Step 2: query Overpass for businesses matching the tag(s) within the bbox.
 async function queryOverpass(bbox, tags, maxResults) {
   const clauses = tags
     .map((t) => {
@@ -72,7 +116,7 @@ async function queryOverpass(bbox, tags, maxResults) {
   let lastErr;
   for (const url of OVERPASS_URLS) {
     try {
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -82,14 +126,14 @@ async function queryOverpass(bbox, tags, maxResults) {
       });
       if (res.status === 429 || res.status === 504) {
         lastErr = new Error(`Overpass HTTP ${res.status} at ${url}`);
-        continue; // try next mirror
+        continue;
       }
       if (!res.ok) throw new Error(`Overpass HTTP ${res.status} at ${url}`);
       const data = await res.json();
       return data.elements || [];
     } catch (err) {
-      lastErr = err;
-      // network error or timeout — try next mirror
+      const reason = err.name === 'AbortError' ? `timeout after ${FETCH_TIMEOUT_MS}ms` : err.message || err;
+      lastErr = new Error(`${url} — ${reason}`);
     }
   }
   throw lastErr || new Error('All Overpass mirrors failed');
@@ -98,7 +142,7 @@ async function queryOverpass(bbox, tags, maxResults) {
 function elementToCandidate(el, industry) {
   const tags = el.tags || {};
   const name = tags.name;
-  if (!name) return null; // skip unnamed nodes, not useful leads
+  if (!name) return null;
 
   const addressParts = [
     tags['addr:housenumber'],
@@ -119,7 +163,7 @@ function elementToCandidate(el, industry) {
       }
     ],
     description: tags.shop || tags.office || tags.amenity || '',
-    confidence: 0.5, // OSM data is community-sourced; treat as medium confidence
+    confidence: 0.5,
     source_url: `https://www.openstreetmap.org/${el.type}/${el.id}`,
     source_type: 'real_web'
   };
