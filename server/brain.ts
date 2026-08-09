@@ -123,16 +123,17 @@ export class VoxlineBrain {
           addAuditLog('companies', compId, 'INSERT', null, comp);
 
           // Automatically trigger Research Agent — but only for real
-          // companies with an email on file (never AI-demo placeholders,
-          // and never companies we have no way to actually contact — email
-          // is currently our only outreach channel), and only while we're
-          // still within today's free-tier AI budget, spaced out to
-          // respect the per-minute rate limit too. Fire-and-forget so
-          // discovery itself doesn't stall waiting for AI processing.
+          // companies we have SOME way to reach (either an email already,
+          // or at least a website — runResearchAgent will try to enrich a
+          // missing email from the website before scoring/drafting), never
+          // AI-demo placeholders, and only while we're still within
+          // today's free-tier AI budget, spaced out to respect the
+          // per-minute rate limit too. Fire-and-forget so discovery itself
+          // doesn't stall waiting for AI processing.
           if (comp.is_demo) {
             console.log(`[ScoutAgent] "${comp.name}" is AI-demo data (no real connector result) — skipping AI research/outreach, left in discovery stage.`);
-          } else if (!comp.email) {
-            console.log(`[ScoutAgent] "${comp.name}" has no email on file — skipping AI research/outreach (no way to contact them yet), left in discovery stage.`);
+          } else if (!comp.email && !comp.website) {
+            console.log(`[ScoutAgent] "${comp.name}" has no email or website on file — skipping AI research/outreach (no way to contact or enrich them yet), left in discovery stage.`);
           } else {
             (async () => {
               if (await reserveAISlot()) {
@@ -355,12 +356,13 @@ export class VoxlineBrain {
 
     // 1) Real, contactable companies still sitting in 'discovery' with no
     //    research report yet (their auto-research call never happened or
-    //    got capped).
+    //    got capped). Includes website-only companies — runResearchAgent
+    //    tries to enrich a missing email from the website first.
     const needsResearch = db.companies.filter(
       (c) =>
         !c.is_deleted &&
         !c.is_demo &&
-        c.email &&
+        (c.email || c.website) &&
         c.pipeline_stage === 'discovery' &&
         !db.research_reports.some((r) => r.company_id === c.id)
     );
