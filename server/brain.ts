@@ -398,6 +398,8 @@ export class VoxlineBrain {
 
     if (researched > 0 || drafted > 0) {
       console.log(`[CatchUp] Retried ${researched} stuck research job(s), ${drafted} stuck draft job(s).`);
+    } else {
+      console.log(`[CatchUp] Nothing to retry (${needsResearch.length} candidates needed research, ${needsDraft.length} candidates needed draft — 0 actually processed).`);
     }
     return { researched, drafted };
   }
