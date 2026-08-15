@@ -4,13 +4,39 @@
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
-// Common placeholder/tracking domains to ignore (image CDNs, analytics, template boilerplate)
-const IGNORE_DOMAINS = ['sentry.io', 'wixpress.com', 'example.com', 'schema.org', 'w3.org', 'godaddy.com', 'domain.com'];
+// Common placeholder/tracking domains to ignore (image CDNs, analytics,
+// template boilerplate, and generic "example" domains that show up as
+// input placeholder text, e.g. <input placeholder="you@company.com">).
+const IGNORE_DOMAINS = [
+  'sentry.io', 'wixpress.com', 'example.com', 'schema.org', 'w3.org',
+  'godaddy.com', 'domain.com', 'email.com', 'company.com', 'yourdomain.com',
+  'yourcompany.com', 'mycompany.com', 'sample.com', 'test.com', 'website.com',
+  'mail.com', 'address.com'
+];
+
+// Local-part patterns that are almost always placeholder/example text from
+// a contact-form input field, not a real address — e.g. "you@...",
+// "yourname@...", "name@...", "test@...", "john.doe@...". Matched against
+// the part before the @ only, case-insensitive, exact or prefix match.
+const PLACEHOLDER_LOCAL_PARTS = [
+  'you', 'yourname', 'youremail', 'yourmail', 'your.name', 'your.email',
+  'name', 'username', 'user', 'test', 'example', 'sample', 'placeholder',
+  'someone', 'anyone', 'firstname.lastname', 'firstname', 'lastname',
+  'john.doe', 'jane.doe', 'johndoe', 'janedoe', 'noreply', 'no-reply',
+  'donotreply', 'enter-email', 'enteremail', 'yourusername'
+];
+
+export function isPlaceholderEmail(email: string): boolean {
+  const [localPart] = email.split('@');
+  if (!localPart) return true;
+  const normalized = localPart.toLowerCase();
+  return PLACEHOLDER_LOCAL_PARTS.some((p) => normalized === p || normalized.startsWith(p + '.') || normalized.startsWith(p + '_'));
+}
 
 function extractEmails(html: string): string[] {
   const matches = html.match(EMAIL_REGEX) || [];
   const unique = Array.from(new Set(matches.map((e) => e.toLowerCase())));
-  return unique.filter((e) => !IGNORE_DOMAINS.some((d) => e.endsWith(d)));
+  return unique.filter((e) => !IGNORE_DOMAINS.some((d) => e.endsWith(d)) && !isPlaceholderEmail(e));
 }
 
 async function fetchWithTimeout(url: string, ms = 8000): Promise<string | null> {

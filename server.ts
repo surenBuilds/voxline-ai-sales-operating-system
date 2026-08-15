@@ -7,6 +7,7 @@ import { runAIProposalGenerator } from './server/ai.js';
 import { sendMessageById } from './server/messaging.js';
 import { startAutonomousScheduler } from './server/scheduler.js';
 import { sendOutboundEmail } from './server/email.js';
+import { isPlaceholderEmail } from './server/emailEnrichment.js';
 
 async function startServer() {
   const app = express();
@@ -490,12 +491,36 @@ async function startServer() {
   });
 
   seedKnowledgeBaseIfEmpty();
+  cleanupPlaceholderEmails();
   startAutonomousScheduler();
 }
 
 // One-time Knowledge Base seed with the company's real services/products,
 // so AI-generated outreach is grounded in accurate facts instead of generic
 // claims. Guarded by title so re-deploys never create duplicates.
+// One-time (well, every-boot, but cheap and idempotent) cleanup: clears any
+// company email that matches a known placeholder pattern (e.g.
+// "you@company.com", "yourname@email.com") picked up by an earlier,
+// looser version of the website email-enrichment step. Companies affected
+// go back to having no email on file, making them eligible to be
+// re-enriched (with the now-hardened filter) or simply left alone.
+function cleanupPlaceholderEmails() {
+  const db = getDb();
+  let cleaned = 0;
+  for (const c of db.companies) {
+    if (c.email && isPlaceholderEmail(c.email)) {
+      console.log(`[startup] Clearing placeholder email "${c.email}" from company "${c.name}"`);
+      c.email = '';
+      c.updated_at = new Date().toISOString();
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    saveDatabaseToDisk();
+    console.log(`[startup] Cleared ${cleaned} placeholder email(s).`);
+  }
+}
+
 function seedKnowledgeBaseIfEmpty() {
   const db = getDb();
   const seedArticles = [
