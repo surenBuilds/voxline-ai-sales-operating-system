@@ -435,42 +435,6 @@ async function startServer() {
     res.json({ note });
   });
 
-  // TEMP: diagnostic stats endpoint. Remove after use.
-  app.get('/api/_temp_stats', (req, res) => {
-    const db = getDb();
-    const sentMessages = db.messages.filter((m) => m.status === 'sent');
-    const failedMessages = db.messages.filter((m) => m.status === 'failed');
-    const recentSent = sentMessages
-      .slice()
-      .sort((a, b) => (b.sent_at || '').localeCompare(a.sent_at || ''))
-      .slice(0, 15)
-      .map((m) => {
-        const conv = db.conversations.find((c) => c.id === m.conversation_id);
-        const comp = conv ? db.companies.find((c) => c.id === conv.company_id) : null;
-        return { company: comp?.name || '?', email: comp?.email || '?', sent_at: m.sent_at };
-      });
-    const recentFailed = failedMessages
-      .slice()
-      .sort((a, b) => (b.sent_at || '').localeCompare(a.sent_at || ''))
-      .slice(0, 5)
-      .map((m) => {
-        const conv = db.conversations.find((c) => c.id === m.conversation_id);
-        const comp = conv ? db.companies.find((c) => c.id === conv.company_id) : null;
-        return { company: comp?.name || '?', sent_at: m.sent_at };
-      });
-    res.json({
-      total_sent: sentMessages.length,
-      total_failed: failedMessages.length,
-      recent_sent: recentSent,
-      recent_failed: recentFailed,
-      ai_call_budget: db.ai_call_budget,
-      total_companies: db.companies.length,
-      companies_discovery_stage_real_with_contact: db.companies.filter(
-        (c) => !c.is_demo && !c.is_deleted && c.pipeline_stage === 'discovery' && (c.email || c.website)
-      ).length
-    });
-  });
-
   // VITE MIDDLEWARE OR STATIC SERVING
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
