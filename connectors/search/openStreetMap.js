@@ -115,29 +115,87 @@ async function queryOverpass(bbox, tags, maxResults) {
 
   let lastErr;
   for (const url of OVERPASS_URLS) {
-    try {
-      const res = await fetchWithTimeout(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': USER_AGENT
-        },
-        body: `data=${encodeURIComponent(query)}`
-      });
-      if (res.status === 429 || res.status === 504) {
-        lastErr = new Error(`Overpass HTTP ${res.status} at ${url}`);
-        continue;
+    // Try each mirror twice (transient network blips are common on public
+    // infra) before giving up on it and moving to the next mirror.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetchWithTimeout(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': USER_AGENT
+          },
+          body: `data=${encodeURIComponent(query)}`
+        });
+        if (res.status === 429 || res.status === 504) {
+          lastErr = new Error(`Overpass HTTP ${res.status} at ${url}`);
+          break; // don't retry rate-limits on the same mirror — move on
+        }
+        if (!res.ok) throw new Error(`Overpass HTTP ${res.status} at ${url}`);
+        const data = await res.json();
+        return data.elements || [];
+      } catch (err) {
+        const reason = err.name === 'AbortError' ? `timeout after ${FETCH_TIMEOUT_MS}ms` : err.message || err;
+        lastErr = new Error(`${url} — ${reason}`);
+        if (attempt === 1) {
+          await new Promise((r) => setTimeout(r, 1500)); // brief pause, then retry same mirror once
+        }
       }
-      if (!res.ok) throw new Error(`Overpass HTTP ${res.status} at ${url}`);
-      const data = await res.json();
-      return data.elements || [];
-    } catch (err) {
-      const reason = err.name === 'AbortError' ? `timeout after ${FETCH_TIMEOUT_MS}ms` : err.message || err;
-      lastErr = new Error(`${url} — ${reason}`);
     }
   }
   throw lastErr || new Error('All Overpass mirrors failed');
 }
+
+// Fallback when every Overpass mirror fails: query Nominatim's own search
+// endpoint (a different API surface than Overpass, so it isn't affected by
+// the same outage) for free-text business names within the bounding box.
+// Lower recall than Overpass's tag-based search, but free and independent.
+async function searchNominatimFallback(bbox, keyword, maxResults) {
+  const params = new URLSearchParams({
+    q: keyword,
+    format: 'json',
+    addressdetails: '1',
+    extratags: '1',
+    limit: String(Math.min(maxResults, 30)),
+    viewbox: `${bbox.west},${bbox.north},${bbox.east},${bbox.south}`,
+    bounded: '1'
+  });
+  try {
+    const res = await fetchWithTimeout(`${NOMINATIM_URL}?${params.toString()}`, {
+      headers: { 'User-Agent': USER_AGENT }
+    });
+    if (!res.ok) return [];
+    const results = await res.json();
+    return (results || []).map((r) => ({
+      tags: {
+        name: r.namedetails?.name || r.display_name?.split(',')[0] || keyword,
+        website: r.extratags?.website || '',
+        phone: r.extratags?.phone || '',
+        email: r.extratags?.email || '',
+        'addr:city': r.address?.city || r.address?.town || ''
+      },
+      type: r.osm_type,
+      id: r.osm_id
+    }));
+  } catch (err) {
+    console.error('Nominatim fallback search error:', err.message || err);
+    return [];
+  }
+}
+
+// A representative free-text keyword per industry, used only for the
+// Nominatim fallback search (Overpass uses the richer tag map above).
+const INDUSTRY_KEYWORD = {
+  technology: 'computer',
+  retail: 'shop',
+  hospitality: 'restaurant',
+  healthcare: 'pharmacy',
+  finance: 'bank',
+  education: 'school',
+  manufacturing: 'factory',
+  'real estate': 'real estate agency',
+  robotics: 'engineering'
+};
 
 function elementToCandidate(el, industry) {
   const tags = el.tags || {};
@@ -177,7 +235,14 @@ export async function searchCompanies(filters) {
     if (!bbox) return [];
 
     const tags = tagsForIndustry(industry);
-    const elements = await queryOverpass(bbox, tags, maxResults);
+    let elements;
+    try {
+      elements = await queryOverpass(bbox, tags, maxResults);
+    } catch (err) {
+      console.error('OpenStreetMap connector error (Overpass exhausted, trying Nominatim fallback):', err.message || err);
+      const keyword = INDUSTRY_KEYWORD[(industry || '').toLowerCase().trim()] || industry;
+      elements = await searchNominatimFallback(bbox, keyword, maxResults);
+    }
 
     const seen = new Set();
     const candidates = [];
