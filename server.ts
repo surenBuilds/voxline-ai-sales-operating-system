@@ -435,6 +435,35 @@ async function startServer() {
     res.json({ note });
   });
 
+  // TEMP: search + quarantine endpoint for out-of-region companies. Remove after use.
+  app.get('/api/_temp_search', (req, res) => {
+    const db = getDb();
+    const q = ((req.query.q as string) || '').toLowerCase();
+    const industry = req.query.industry as string | undefined;
+    const results = db.companies
+      .filter((c) => !c.is_deleted)
+      .filter((c) => (industry ? c.industry === industry : true))
+      .filter((c) => (q ? c.name.toLowerCase().includes(q) : true))
+      .map((c) => ({ id: c.id, name: c.name, industry: c.industry, email: c.email, website: c.website, pipeline_stage: c.pipeline_stage }));
+    res.json({ count: results.length, results });
+  });
+  app.post('/api/_temp_quarantine', (req, res) => {
+    const db = getDb();
+    const ids: string[] = req.body?.ids || [];
+    let removed = 0;
+    for (const id of ids) {
+      const c = db.companies.find((x) => x.id === id);
+      if (c) {
+        c.is_deleted = true;
+        c.deleted_at = new Date().toISOString();
+        c.deleted_by = 'manual-quarantine-out-of-region';
+        removed++;
+      }
+    }
+    saveDatabaseToDisk();
+    res.json({ removed });
+  });
+
   // VITE MIDDLEWARE OR STATIC SERVING
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
