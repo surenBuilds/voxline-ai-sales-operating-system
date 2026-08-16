@@ -291,10 +291,17 @@ export class VoxlineBrain {
   }
 
   // 3. Trigger Sales Agent Draft Job
-  static async runSalesAgentDraftJob(companyId: string, lang = 'am'): Promise<any> {
+  static async runSalesAgentDraftJob(companyId: string, lang?: string): Promise<any> {
     const db = getDb();
     const company = db.companies.find(c => c.id === companyId);
     if (!company) throw new Error('Company not found');
+
+    // Auto-detect outreach language from the region the company was
+    // discovered in, unless the caller explicitly overrides it: Armenian
+    // companies get Armenian outreach, everyone else gets English (a safe,
+    // widely-understood B2B default — not every target market's native
+    // language is one the AI can write reliably in).
+    const effectiveLang = lang || (company.address && company.address.trim().toLowerCase() === 'armenia' ? 'am' : 'en');
 
     const report = db.research_reports.find(r => r.company_id === companyId);
     const opps = db.opportunities.filter(o => o.company_id === companyId);
@@ -312,7 +319,7 @@ export class VoxlineBrain {
       report?.summary || company.description,
       oppGaps.length ? oppGaps : ['Voxline AI 24/7 Chatbot'],
       fullContext,
-      lang
+      effectiveLang
     );
 
     // Create or find Conversation
@@ -340,7 +347,7 @@ export class VoxlineBrain {
       status: 'pending_approval' as const,
       ai_generated: true,
       sent_at: new Date().toISOString(),
-      language: lang as any
+      language: effectiveLang as any
     };
     db.messages.unshift(msg);
 

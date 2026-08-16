@@ -211,10 +211,22 @@ ${contactName}
 ${contactPhone}
 Voxline AI`;
 
-  if (!ai) return defaultAmMsg;
+  const defaultEnMsg = `Hello ${companyName} team,
+
+We're Voxline AI — we build AI employees and complete AI-driven systems, not just chatbots. Looking into your (${industry}) business, we saw how an AI employee could take on ${opportunities[0] || 'customer support and front-line work'}, working 24/7 without ever getting tired.
+
+Would you be open to a quick 15-minute call to discuss what an AI employee built specifically for your business could look like?
+
+${contactName}
+${contactPhone}
+Voxline AI`;
+
+  const defaultMsg = lang === 'am' ? defaultAmMsg : defaultEnMsg;
+
+  if (!ai) return defaultMsg;
 
   try {
-    const prompt = `You are Voxline AI's sales outreach writer. Write a highly persuasive, respectful, professional B2B outreach message in language "${lang}" (default Armenian).
+    const prompt = `You are Voxline AI's sales outreach writer. Write a highly persuasive, respectful, professional B2B outreach message in language "${lang}" (use "am" for Armenian, "en" for English, or the given ISO code — write entirely in that language, including the greeting and body, not just partially).
 Target Company: ${companyName} (${industry})
 Research Summary: ${summary}
 Identified Automation Gaps: ${opportunities.join(', ')}
@@ -231,17 +243,17 @@ Other requirements:
 - Ground all facts in the Knowledge Base context provided.
 - Include a polite call to action to schedule a 15-minute call.
 - End the message with EXACTLY this sign-off block and nothing else after it (name and phone only — no email address): "${contactName}\n${contactPhone}\nVoxline AI"
-- Do NOT sound overly robotic or use generic sales clichés; sound like a confident AI systems consultant based in Armenia.`;
+- Do NOT sound overly robotic or use generic sales clichés; sound like a confident AI systems consultant based in Armenia, reaching out internationally when writing in a language other than Armenian.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
       contents: prompt
     });
 
-    return response.text || defaultAmMsg;
+    return response.text || defaultMsg;
   } catch (err) {
     console.error('Sales AI error:', err);
-    return defaultAmMsg;
+    return defaultMsg;
   }
 }
 
