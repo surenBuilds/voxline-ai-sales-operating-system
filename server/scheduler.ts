@@ -7,7 +7,12 @@ import { checkForReplies } from './replyTracker.js';
 //     from hosting/deployment settings, not by editing code) ---
 //
 // AUTO_DISCOVERY_INDUSTRIES   comma-separated list, e.g. "Healthcare,Hospitality,Retail"
-// AUTO_DISCOVERY_REGION       e.g. "Yerevan" (default)
+// AUTO_DISCOVERY_REGIONS      comma-separated list of countries/regions to search,
+//                             e.g. "Armenia,Georgia,Iran,UAE,India". One full region
+//                             (all industries) is searched per discovery tick, rotating
+//                             through the list — searching every region every tick
+//                             would make a single tick take far too long.
+// AUTO_DISCOVERY_REGION       legacy single-region fallback if AUTO_DISCOVERY_REGIONS unset
 // AUTO_DISCOVERY_INTERVAL_MIN how often (minutes) to run Scout Agent — default 60
 // AUTONOMOUS_MODE             "true" to auto-approve + send outreach without human review
 // AUTONOMOUS_SEND_INTERVAL_MIN how often (minutes) to flush pending outreach — default 15
@@ -17,11 +22,21 @@ function getIndustries(): string[] {
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
+function getRegions(): string[] {
+  const raw = process.env.AUTO_DISCOVERY_REGIONS || process.env.AUTO_DISCOVERY_REGION || 'Yerevan';
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+let regionRotationIndex = 0;
+
 async function runDiscoveryTick() {
   const industries = getIndustries();
   if (industries.length === 0) return; // Not configured — scheduler stays idle for discovery
 
-  const region = process.env.AUTO_DISCOVERY_REGION || 'Yerevan';
+  const regions = getRegions();
+  const region = regions[regionRotationIndex % regions.length];
+  regionRotationIndex++;
+
   // Space out requests between industries — OpenStreetMap's Overpass API
   // rate-limits back-to-back requests (seen as HTTP 429 in logs), and this
   // also naturally paces any Gemini AI fallback calls.

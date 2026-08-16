@@ -8,6 +8,7 @@ import { sendMessageById } from './server/messaging.js';
 import { startAutonomousScheduler } from './server/scheduler.js';
 import { sendOutboundEmail } from './server/email.js';
 import { isPlaceholderEmail } from './server/emailEnrichment.js';
+import { looksNonArmenian } from './server/geoFilter.js';
 
 async function startServer() {
   const app = express();
@@ -485,6 +486,7 @@ async function startServer() {
 
   seedKnowledgeBaseIfEmpty();
   cleanupPlaceholderEmails();
+  quarantineNonArmenianCompanies();
   startAutonomousScheduler();
 }
 
@@ -497,6 +499,30 @@ async function startServer() {
 // looser version of the website email-enrichment step. Companies affected
 // go back to having no email on file, making them eligible to be
 // re-enriched (with the now-hardened filter) or simply left alone.
+// One-time (every-boot, idempotent) retroactive cleanup: quarantines any
+// already-stored company (across ALL industries, not just newly-discovered
+// ones) that looks Azerbaijani or Turkish — border-data leakage from
+// before the geoFilter safety gate existed. Marks them is_deleted so they
+// drop out of every pipeline query (discovery, research, draft, send)
+// without literally destroying the audit trail.
+function quarantineNonArmenianCompanies() {
+  const db = getDb();
+  let quarantined = 0;
+  for (const c of db.companies) {
+    if (!c.is_deleted && looksNonArmenian(c)) {
+      console.log(`[startup] Quarantining "${c.name}" (${c.industry}, stage: ${c.pipeline_stage}) — looks Azerbaijani/Turkish`);
+      c.is_deleted = true;
+      c.deleted_at = new Date().toISOString();
+      c.deleted_by = 'auto-geo-quarantine';
+      quarantined++;
+    }
+  }
+  if (quarantined > 0) {
+    saveDatabaseToDisk();
+    console.log(`[startup] Quarantined ${quarantined} Azerbaijani/Turkish compan${quarantined === 1 ? 'y' : 'ies'}.`);
+  }
+}
+
 function cleanupPlaceholderEmails() {
   const db = getDb();
   let cleaned = 0;

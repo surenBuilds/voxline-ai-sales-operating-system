@@ -24,7 +24,19 @@ const USER_AGENT = 'VoxlineAI-BusinessDiscovery/1.0 (contact: set RESEND_FROM_EM
 // businesses outside Armenia. The ISO boundary query only matches the real
 // country polygon, not a rectangle around it.
 const COUNTRY_ISO_CODES = {
-  armenia: 'AM'
+  armenia: 'AM',
+  georgia: 'GE',
+  iran: 'IR',
+  uae: 'AE',
+  'united arab emirates': 'AE',
+  'saudi arabia': 'SA',
+  qatar: 'QA',
+  kuwait: 'KW',
+  bahrain: 'BH',
+  oman: 'OM',
+  india: 'IN',
+  pakistan: 'PK',
+  china: 'CN'
 };
 
 // Per-request timeout — without this, a stalled connection to a busy public

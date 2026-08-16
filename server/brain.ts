@@ -2,6 +2,7 @@ import { getDb, addAuditLog, saveDatabaseToDisk } from './db.js';
 import { runResearchAI, runSalesAgentDraft, runAICEOAnalysis } from './ai.js';
 import { buildMemoryContext } from './salesMemory.js';
 import { findContactEmail } from './emailEnrichment.js';
+import { looksNonArmenian } from './geoFilter.js';
 import { searchCompanies } from '../connectors/search/index.js';
 import { Company, AgentJob } from '../src/types/index.js';
 
@@ -90,6 +91,14 @@ export class VoxlineBrain {
       const newCompanies: Company[] = [];
 
       for (const item of results as any[]) {
+        // Hard safety gate: never create a record for a business that looks
+        // Azerbaijani or Turkish, regardless of which region search
+        // produced it (border data leakage). See geoFilter.ts.
+        if (looksNonArmenian(item)) {
+          console.log(`[ScoutAgent] Skipping "${item.name}" — looks Azerbaijani/Turkish (geo safety filter), not a valid outreach target.`);
+          continue;
+        }
+
         // Check for duplicates by domain or name
         const exists = db.companies.find(c => c.name.toLowerCase() === item.name.toLowerCase() || (c.website && item.website && c.website.toLowerCase() === item.website.toLowerCase()));
         if (!exists) {
@@ -98,7 +107,7 @@ export class VoxlineBrain {
             id: compId,
             name: item.name,
             industry: item.industry || industry,
-            address: `${region}, Armenia`,
+            address: region,
             website: item.website || (usingRealData ? '' : `https://${item.name.toLowerCase().replace(/[^a-z]/g, '')}.am`),
             phone: item.phone || (usingRealData ? '' : '+374 10 000000'),
             email: item.email || (usingRealData ? '' : `contact@${item.name.toLowerCase().replace(/[^a-z]/g, '')}.am`),
