@@ -14,6 +14,19 @@ const OVERPASS_URLS = [
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const USER_AGENT = 'VoxlineAI-BusinessDiscovery/1.0 (contact: set RESEND_FROM_EMAIL)';
 
+// ISO 3166-1 alpha-2 codes for country-level searches. When the requested
+// location matches one of these, we query Overpass using the country's
+// actual administrative boundary polygon (area["ISO3166-1"="AM"]) instead
+// of a rectangular bounding box. This matters: a bbox is just a rectangle,
+// and Armenia's irregular borders mean a bbox tight enough to cover the
+// whole country can still clip slivers of Azerbaijan/Nakhchivan/Georgia/
+// Turkey/Iran near the edges — which is how outreach ended up going to
+// businesses outside Armenia. The ISO boundary query only matches the real
+// country polygon, not a rectangle around it.
+const COUNTRY_ISO_CODES = {
+  armenia: 'AM'
+};
+
 // Per-request timeout — without this, a stalled connection to a busy public
 // mirror hangs until the platform kills it, surfacing as an opaque
 // "fetch failed" with no useful diagnostic.
@@ -95,11 +108,19 @@ async function resolveArea(location) {
   return bbox;
 }
 
-async function queryOverpass(bbox, tags, maxResults) {
+async function queryOverpass(bbox, tags, maxResults, isoCode) {
+  const locationClause = isoCode
+    ? `area["ISO3166-1"="${isoCode}"][admin_level=2]->.searchArea;`
+    : '';
+
   const clauses = tags
     .map((t) => {
       const [k, v] = t.split('=');
       const tagFilter = v === '*' ? `["${k}"]` : `["${k}"="${v}"]`;
+      if (isoCode) {
+        return `node${tagFilter}(area.searchArea);
+              way${tagFilter}(area.searchArea);`;
+      }
       return `node${tagFilter}(${bbox.south},${bbox.west},${bbox.north},${bbox.east});
               way${tagFilter}(${bbox.south},${bbox.west},${bbox.north},${bbox.east});`;
     })
@@ -107,6 +128,7 @@ async function queryOverpass(bbox, tags, maxResults) {
 
   const query = `
     [out:json][timeout:25];
+    ${locationClause}
     (
       ${clauses}
     );
@@ -150,16 +172,22 @@ async function queryOverpass(bbox, tags, maxResults) {
 // endpoint (a different API surface than Overpass, so it isn't affected by
 // the same outage) for free-text business names within the bounding box.
 // Lower recall than Overpass's tag-based search, but free and independent.
-async function searchNominatimFallback(bbox, keyword, maxResults) {
+async function searchNominatimFallback(bbox, keyword, maxResults, isoCode) {
   const params = new URLSearchParams({
     q: keyword,
     format: 'json',
     addressdetails: '1',
     extratags: '1',
-    limit: String(Math.min(maxResults, 30)),
-    viewbox: `${bbox.west},${bbox.north},${bbox.east},${bbox.south}`,
-    bounded: '1'
+    limit: String(Math.min(maxResults, 30))
   });
+  // Prefer Nominatim's own country-code filter (precise, boundary-aware)
+  // over a bounding box, for the same border-leakage reason as Overpass.
+  if (isoCode) {
+    params.set('countrycodes', isoCode.toLowerCase());
+  } else if (bbox) {
+    params.set('viewbox', `${bbox.west},${bbox.north},${bbox.east},${bbox.south}`);
+    params.set('bounded', '1');
+  }
   try {
     const res = await fetchWithTimeout(`${NOMINATIM_URL}?${params.toString()}`, {
       headers: { 'User-Agent': USER_AGENT }
@@ -229,19 +257,23 @@ function elementToCandidate(el, industry) {
 
 export async function searchCompanies(filters) {
   const { industry = 'business', country = 'Armenia', maxResults = 10 } = filters || {};
+  const isoCode = COUNTRY_ISO_CODES[(country || '').toLowerCase().trim()] || null;
 
   try {
+    // bbox is still resolved (used for the Nominatim fallback's viewbox
+    // when we DON'T have an ISO code, e.g. a city-level search) but the
+    // primary Overpass query uses the precise ISO boundary when available.
     const bbox = await resolveArea(country);
-    if (!bbox) return [];
+    if (!bbox && !isoCode) return [];
 
     const tags = tagsForIndustry(industry);
     let elements;
     try {
-      elements = await queryOverpass(bbox, tags, maxResults);
+      elements = await queryOverpass(bbox, tags, maxResults, isoCode);
     } catch (err) {
       console.error('OpenStreetMap connector error (Overpass exhausted, trying Nominatim fallback):', err.message || err);
       const keyword = INDUSTRY_KEYWORD[(industry || '').toLowerCase().trim()] || industry;
-      elements = await searchNominatimFallback(bbox, keyword, maxResults);
+      elements = await searchNominatimFallback(bbox, keyword, maxResults, isoCode);
     }
 
     const seen = new Set();
