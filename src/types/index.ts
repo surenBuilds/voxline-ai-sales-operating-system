@@ -125,6 +125,11 @@ export interface LeadScore {
   workspace_id?: string;
 }
 
+// NOTE: only 'email' is actually implemented for delivery today (see
+// server/messaging.ts / server/email.ts). The other channel types are
+// modeled in the schema for future work but are not wired to any real
+// delivery mechanism — nothing should claim or imply that voice/whatsapp/
+// instagram/linkedin outreach is currently happening.
 export type ChannelType = 'email' | 'whatsapp' | 'instagram' | 'voice' | 'linkedin';
 
 export interface Message {

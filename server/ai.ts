@@ -107,7 +107,7 @@ export async function runResearchAI(companyName: string, industry: string, websi
       support_quality: 'manual' as const,
       ai_opportunities: [
         'Omni-channel Armenian AI Chatbot for Instagram & Website',
-        'Voxline AI Voice Reservation & Order Assistant',
+        'AI Employee for Email & Web Chat Support',
         'Automated CRM Lead Capture Workflow'
       ],
       automation_need_score: 88,
@@ -130,14 +130,24 @@ Website: ${website}
 Description: ${description}
 
 Perform digital presence audit and identify automation gaps.
+
+IMPORTANT constraint on recommendations: this outreach system currently
+delivers everything through EMAIL ONLY — it cannot place phone calls,
+send voice messages, or send WhatsApp/SMS. Do NOT recommend voice
+assistants, phone/call-based products, or WhatsApp/SMS bots as something
+already being delivered or set up. You may still mention them as a topic
+to explore in a follow-up conversation, but the primary recommended_service
+and ai_opportunities must be things deliverable via chatbot/website/app
+integration work — not voice or telephony products.
+
 Return JSON with:
 - summary: string
 - website_quality: 'poor' | 'fair' | 'good' | 'excellent'
 - marketing_level: 'basic' | 'moderate' | 'advanced'
 - support_quality: 'manual' | 'semi-automated' | 'fully-automated'
-- ai_opportunities: string[] (3 specific Voxline AI solutions)
+- ai_opportunities: string[] (3 specific Voxline AI solutions, chatbot/website/app-based, not voice/telephony)
 - automation_need_score: integer (0-100)
-- opportunities: array of objects { gap_type, description, recommended_service, priority: 'high'|'medium'|'low', estimated_monthly_value_usd: number }`;
+- opportunities: array of objects { gap_type, description, recommended_service, priority: 'high'|'medium'|'low', estimated_monthly_value_usd: number } — recommended_service must be chatbot/website/app-based, not voice/telephony`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3.6-flash',
